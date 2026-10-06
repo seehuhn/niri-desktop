@@ -95,3 +95,17 @@ layout_arrange (LayoutItem *items, guint n_items, int viewport_width, int viewpo
     content = MAX (content, items[i].out_y + items[i].height);
   return content;
 }
+
+static int
+clamp_coord (int v, int size, int extent)
+{
+  return CLAMP (v, 0, MAX (0, extent - size));
+}
+
+void
+layout_clamp_group (int *x, int *y, int group_w, int group_h,
+                    int viewport_w, int viewport_h)
+{
+  *x = clamp_coord (*x, group_w, viewport_w);
+  *y = clamp_coord (*y, group_h, viewport_h);
+}

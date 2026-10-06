@@ -4,6 +4,7 @@
 
 #include "actions.h"
 #include "desktop-layout.h"
+#include "layout.h"
 #include "settings.h"
 
 struct _DesktopCanvas
@@ -522,13 +523,48 @@ move_selection (DesktopCanvas *self,
   select_only (self, desktop_icon_get_item (DESKTOP_ICON (to)));
 }
 
+/* Requests the context menu for the focused (or first) selected icon at
+ * its centre, or for the background at the canvas centre. */
+static void
+request_context_menu_from_keyboard (DesktopCanvas *self)
+{
+  GtkWidget *icon = NULL;
+  graphene_point_t c;
+
+  if (self->focus_item != NULL && is_selected (self->focus_item))
+    icon = g_hash_table_lookup (self->icons, self->focus_item);
+  if (icon == NULL)
+    icon = first_selected_icon (self);
+
+  if (icon != NULL)
+    {
+      icon_centre (self, icon, &c);
+      g_signal_emit (self, signals[SIGNAL_CONTEXT_MENU_REQUESTED], 0,
+                     desktop_icon_get_item (DESKTOP_ICON (icon)), (double) c.x, (double) c.y);
+    }
+  else
+    {
+      g_signal_emit (self, signals[SIGNAL_CONTEXT_MENU_REQUESTED], 0, NULL,
+                     gtk_widget_get_width (GTK_WIDGET (self)) / 2.0,
+                     gtk_widget_get_height (GTK_WIDGET (self)) / 2.0);
+    }
+}
+
 static gboolean
 on_key_pressed (GtkEventControllerKey *controller G_GNUC_UNUSED,
                 guint                  keyval,
                 guint                  keycode G_GNUC_UNUSED,
-                GdkModifierType        state G_GNUC_UNUSED,
+                GdkModifierType        state,
                 DesktopCanvas         *self)
 {
+  GdkModifierType mods = state & gtk_accelerator_get_default_mod_mask ();
+
+  if (keyval == GDK_KEY_Menu || (keyval == GDK_KEY_F10 && mods == GDK_SHIFT_MASK))
+    {
+      request_context_menu_from_keyboard (self);
+      return GDK_EVENT_STOP;
+    }
+
   switch (keyval)
     {
     case GDK_KEY_Left:
@@ -651,26 +687,71 @@ on_drop_motion (GtkDropTarget *target,
   return GDK_ACTION_COPY;
 }
 
+/* The area in which the layout keeps stored positions: the canvas width
+ * by the viewport's page size (the canvas height without a viewport). */
+static void
+drop_area (DesktopCanvas *self,
+           int           *vp_w,
+           int           *vp_h)
+{
+  *vp_w = gtk_widget_get_width (GTK_WIDGET (self));
+  *vp_h = self->vadj != NULL ? (int) gtk_adjustment_get_page_size (self->vadj) : 0;
+  if (*vp_h <= 0)
+    *vp_h = gtk_widget_get_height (GTK_WIDGET (self));
+}
+
 /* Moves every dragged item so that the dragged icon's hot spot lands on
- * (x, y), keeping the items' offsets, and stores the new positions. */
+ * (x, y), keeping the items' offsets, and stores the new positions.  The
+ * group is shifted as a whole so that every item stays inside the drop
+ * area; otherwise the layout would park it. */
 static void
 move_dragged_items (DesktopCanvas *self,
                     double         x,
                     double         y)
 {
+  int pitch_h = settings_pitch_height (settings_get_icon_size ());
+  int pitch_w = settings_pitch_width (settings_get_icon_size ());
+  int min_x = G_MAXINT, min_y = G_MAXINT, max_x = G_MININT, max_y = G_MININT;
+  int vp_w, vp_h, gx, gy;
   guint i;
+
+  for (i = 0; i < self->drag_offsets->len; i++)
+    {
+      DragOffset *off = &g_array_index (self->drag_offsets, DragOffset, i);
+      GtkWidget *icon = g_hash_table_lookup (self->icons, off->item);
+      int nx, ny;
+
+      /* Skip items deleted during the drag; their key is gone. */
+      if (icon == NULL)
+        continue;
+      nx = (int) (x - self->drag_hot_x + off->dx);
+      ny = (int) (y - self->drag_hot_y + off->dy);
+      min_x = MIN (min_x, nx);
+      min_y = MIN (min_y, ny);
+      max_x = MAX (max_x, nx + pitch_w);
+      max_y = MAX (max_y, ny + MAX (pitch_h, gtk_widget_get_height (icon)));
+    }
+
+  if (min_x == G_MAXINT)
+    {
+      clear_drag (self);
+      return;
+    }
+
+  drop_area (self, &vp_w, &vp_h);
+  gx = min_x;
+  gy = min_y;
+  layout_clamp_group (&gx, &gy, max_x - min_x, max_y - min_y, vp_w, vp_h);
 
   for (i = 0; i < self->drag_offsets->len; i++)
     {
       DragOffset *off = &g_array_index (self->drag_offsets, DragOffset, i);
       int nx, ny;
 
-      /* Skip items deleted during the drag; their key is gone. */
       if (!g_hash_table_contains (self->icons, off->item))
         continue;
-      nx = (int) (x - self->drag_hot_x + off->dx);
-      ny = (int) (y - self->drag_hot_y + off->dy);
-
+      nx = (int) (x - self->drag_hot_x + off->dx) - min_x + gx;
+      ny = (int) (y - self->drag_hot_y + off->dy) - min_y + gy;
       desktop_model_set_position (self->model, off->item, MAX (0, nx), MAX (0, ny));
     }
   clear_drag (self);
@@ -691,6 +772,7 @@ on_drop (GtkDropTarget *target,
   GSList *slist, *sl;
   GList *files = NULL;
   gboolean move;
+  int ix, iy, vp_w, vp_h;
 
   if (is_local_drop (self, drop))
     {
@@ -709,12 +791,16 @@ on_drop (GtkDropTarget *target,
   if (files == NULL)
     return FALSE;
 
+  /* actions_import stacks the files one pitch apart below the point. */
+  ix = (int) x - pitch_w / 2;
+  iy = (int) y - pitch_h / 2;
+  drop_area (self, &vp_w, &vp_h);
+  layout_clamp_group (&ix, &iy, pitch_w, (int) g_list_length (files) * pitch_h, vp_w, vp_h);
+
   move = drop != NULL && gdk_drop_get_actions (drop) == GDK_ACTION_MOVE;
   root = gtk_widget_get_root (GTK_WIDGET (self));
   actions_import (GTK_IS_WINDOW (root) ? GTK_WINDOW (root) : NULL, self->model, files,
-                  move, TRUE,
-                  MAX (0, (int) x - pitch_w / 2),
-                  MAX (0, (int) y - pitch_h / 2));
+                  move, TRUE, ix, iy);
   g_list_free (files);
   return TRUE;
 }

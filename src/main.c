@@ -198,6 +198,7 @@ static const struct
   { "win.open", "KP_Enter" },
   { "win.rename", "F2" },
   { "win.trash", "Delete" },
+  { "win.trash", "KP_Delete" },
   { "win.copy", "<Control>c" },
   { "win.paste", "<Control>v" },
   { "win.select-all", "<Control>a" },

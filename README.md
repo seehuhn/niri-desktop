@@ -38,9 +38,11 @@ For development, the environment variable `LNXDESKTOP_DIR` replaces the Desktop 
 
 ## Status
 
-All features are implemented and the unit and model tests pass. The manual
-release checklist has not been run yet and needs a human pass (it requires
-real input devices and a second screen):
+The features in the spec are implemented and the unit and model tests
+pass. Interactive behaviour (drag and drop, keyboard navigation, the
+context menu and file operations) has not yet been tried by hand: the
+manual release checklist below needs a human pass (it requires real input
+devices and a second screen):
 
 - [ ] Drag an icon to a text editor in another column; the path arrives. (needs a human pass)
 - [ ] Drop a file from a file manager onto the window; it appears at the drop point. (needs a human pass)

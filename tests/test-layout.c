@@ -130,6 +130,48 @@ test_deterministic (void)
     }
 }
 
+static void
+test_stored_touching_edge_fits (void)
+{
+  LayoutItem it[1] = { stored (500 - 96, 400 - 112) };
+  layout_arrange (it, 1, 500, 400, 112, 128);
+  g_assert_false (it[0].parked);
+  g_assert_cmpint (it[0].out_x, ==, 404);
+  g_assert_cmpint (it[0].out_y, ==, 288);
+}
+
+static void
+test_clamp_group_inside (void)
+{
+  int x = 50, y = 60;
+  layout_clamp_group (&x, &y, 112, 256, 500, 400);
+  g_assert_cmpint (x, ==, 50);
+  g_assert_cmpint (y, ==, 60);
+  x = -20;
+  y = -5;
+  layout_clamp_group (&x, &y, 112, 256, 500, 400);
+  g_assert_cmpint (x, ==, 0);
+  g_assert_cmpint (y, ==, 0);
+}
+
+static void
+test_clamp_group_right_bottom (void)
+{
+  int x = 450, y = 390;
+  layout_clamp_group (&x, &y, 112, 256, 500, 400);
+  g_assert_cmpint (x, ==, 388);
+  g_assert_cmpint (y, ==, 144);
+}
+
+static void
+test_clamp_group_too_small_viewport (void)
+{
+  int x = 30, y = 40;
+  layout_clamp_group (&x, &y, 112, 256, 100, 200);
+  g_assert_cmpint (x, ==, 0);
+  g_assert_cmpint (y, ==, 0);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -143,5 +185,9 @@ main (int argc, char **argv)
   g_test_add_func ("/layout/overlapping-stored-kept", test_overlapping_stored_kept);
   g_test_add_func ("/layout/round-trip-restores", test_round_trip_restores);
   g_test_add_func ("/layout/deterministic", test_deterministic);
+  g_test_add_func ("/layout/stored-touching-edge-fits", test_stored_touching_edge_fits);
+  g_test_add_func ("/layout/clamp-group-inside", test_clamp_group_inside);
+  g_test_add_func ("/layout/clamp-group-right-bottom", test_clamp_group_right_bottom);
+  g_test_add_func ("/layout/clamp-group-too-small-viewport", test_clamp_group_too_small_viewport);
   return g_test_run ();
 }

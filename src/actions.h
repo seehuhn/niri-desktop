@@ -19,6 +19,13 @@ void     actions_copy_to_clipboard (GtkWidget *widget, GList *files);
 void     actions_paste (GtkWindow *parent, GtkWidget *widget, DesktopModel *model);
 void     actions_import (GtkWindow *parent, DesktopModel *model, GList *files,
                          gboolean move, gboolean has_point, int x, int y);
+/* Synchronous helpers for the import thread.  copy_recursive creates
+ * dest as a new directory and copies src's contents into it (symlinks
+ * inside are copied as links); delete_recursive deletes children first.
+ * Both stop at, and return, the first error. */
+gboolean actions_copy_recursive (GFile *src, GFile *dest, GCancellable *cancellable,
+                                 GError **error);
+gboolean actions_delete_recursive (GFile *file, GCancellable *cancellable, GError **error);
 void     actions_show_info (GtkWindow *parent, DesktopItem *item);
 
 G_END_DECLS

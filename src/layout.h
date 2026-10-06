@@ -13,3 +13,9 @@ typedef struct {
 /* Items are processed in array order; returns content height (>= viewport_height). */
 int layout_arrange (LayoutItem *items, guint n_items, int viewport_width, int viewport_height,
                     int pitch_w, int pitch_h);
+
+/* Moves the top-left (x, y) of a group_w x group_h rectangle so that the
+ * rectangle lies inside 0..viewport_w x 0..viewport_h.  Where the viewport
+ * is smaller than the group, that coordinate is pinned to 0. */
+void layout_clamp_group (int *x, int *y, int group_w, int group_h,
+                         int viewport_w, int viewport_h);

@@ -98,7 +98,9 @@ chooser_response (GtkDialog *dialog, int response, gpointer data)
         {
           g_autoptr (GError) error = NULL;
           GList *list = g_list_prepend (NULL, file);
-          if (!g_app_info_launch (app, list, NULL, &error))
+          g_autoptr (GdkAppLaunchContext) context =
+            gdk_display_get_app_launch_context (gtk_widget_get_display (GTK_WIDGET (dialog)));
+          if (!g_app_info_launch (app, list, G_APP_LAUNCH_CONTEXT (context), &error))
             actions_report_error (gtk_window_get_transient_for (GTK_WINDOW (dialog)), error);
           g_list_free (list);
           g_object_unref (app);
@@ -215,11 +217,116 @@ actions_paste (GtkWindow *parent, GtkWidget *widget, DesktopModel *model)
                                   G_PRIORITY_DEFAULT, NULL, paste_done, pd);
 }
 
+#define TREE_ATTRS G_FILE_ATTRIBUTE_STANDARD_NAME "," G_FILE_ATTRIBUTE_STANDARD_TYPE
+
+gboolean
+actions_copy_recursive (GFile *src, GFile *dest, GCancellable *cancellable, GError **error)
+{
+  g_autoptr (GFileEnumerator) children = NULL;
+
+  if (!g_file_make_directory (dest, cancellable, error))
+    return FALSE;
+  children = g_file_enumerate_children (src, TREE_ATTRS, G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,
+                                        cancellable, error);
+  if (children == NULL)
+    return FALSE;
+
+  for (;;)
+    {
+      GFileInfo *info;
+      GFile *child;
+
+      if (!g_file_enumerator_iterate (children, &info, &child, cancellable, error))
+        return FALSE;
+      if (info == NULL)
+        return TRUE;
+
+      g_autoptr (GFile) target = g_file_get_child (dest, g_file_info_get_name (info));
+      gboolean ok = g_file_info_get_file_type (info) == G_FILE_TYPE_DIRECTORY
+                    ? actions_copy_recursive (child, target, cancellable, error)
+                    : g_file_copy (child, target, G_FILE_COPY_NOFOLLOW_SYMLINKS, cancellable,
+                                   NULL, NULL, error);
+      if (!ok)
+        return FALSE;
+    }
+}
+
+gboolean
+actions_delete_recursive (GFile *file, GCancellable *cancellable, GError **error)
+{
+  g_autoptr (GFileInfo) info = g_file_query_info (file, TREE_ATTRS,
+                                                  G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,
+                                                  cancellable, error);
+  if (info == NULL)
+    return FALSE;
+
+  if (g_file_info_get_file_type (info) == G_FILE_TYPE_DIRECTORY)
+    {
+      g_autoptr (GFileEnumerator) children =
+        g_file_enumerate_children (file, TREE_ATTRS, G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,
+                                   cancellable, error);
+      if (children == NULL)
+        return FALSE;
+      for (;;)
+        {
+          GFileInfo *child_info;
+          GFile *child;
+
+          if (!g_file_enumerator_iterate (children, &child_info, &child, cancellable, error))
+            return FALSE;
+          if (child_info == NULL)
+            break;
+          if (!actions_delete_recursive (child, cancellable, error))
+            return FALSE;
+        }
+    }
+  return g_file_delete (file, cancellable, error);
+}
+
 typedef struct
 {
   GtkWindow *parent;
+  GFile     *src;
+  GFile     *dest;
   gboolean   move;
 } TransferData;
+
+static void
+transfer_data_free (TransferData *td)
+{
+  parent_unref (td->parent);
+  g_object_unref (td->src);
+  g_object_unref (td->dest);
+  g_free (td);
+}
+
+/* Copies a directory tree, and for a move then deletes the source. */
+static void
+tree_thread (GTask        *task,
+             gpointer      source G_GNUC_UNUSED,
+             gpointer      data,
+             GCancellable *cancellable)
+{
+  TransferData *td = data;
+  GError *error = NULL;
+
+  if (actions_copy_recursive (td->src, td->dest, cancellable, &error) &&
+      (!td->move || actions_delete_recursive (td->src, cancellable, &error)))
+    g_task_return_boolean (task, TRUE);
+  else
+    g_task_return_error (task, error);
+}
+
+static void
+tree_done (GObject *source G_GNUC_UNUSED, GAsyncResult *res, gpointer user_data)
+{
+  TransferData *td = user_data;
+  g_autoptr (GError) error = NULL;
+
+  if (!g_task_propagate_boolean (G_TASK (res), &error))
+    actions_report_error (td->parent, error);
+  transfer_data_free (td);
+}
 
 static void
 transfer_done (GObject *source, GAsyncResult *res, gpointer user_data)
@@ -228,10 +335,20 @@ transfer_done (GObject *source, GAsyncResult *res, gpointer user_data)
   g_autoptr (GError) error = NULL;
   gboolean ok = td->move ? g_file_move_finish (G_FILE (source), res, &error)
                          : g_file_copy_finish (G_FILE (source), res, &error);
+
+  /* GIO copies only single files; a directory needs a tree copy (and,
+   * for a move across file systems, a tree delete afterwards). */
+  if (!ok && g_error_matches (error, G_IO_ERROR, G_IO_ERROR_WOULD_RECURSE))
+    {
+      g_autoptr (GTask) task = g_task_new (NULL, NULL, tree_done, td);
+
+      g_task_set_task_data (task, td, NULL);
+      g_task_run_in_thread (task, tree_thread);
+      return;
+    }
   if (!ok)
     actions_report_error (td->parent, error);
-  parent_unref (td->parent);
-  g_free (td);
+  transfer_data_free (td);
 }
 
 void
@@ -273,6 +390,8 @@ actions_import (GtkWindow *parent, DesktopModel *model, GList *files,
 
       TransferData *td = g_new0 (TransferData, 1);
       td->parent = parent_ref (parent);
+      td->src = g_object_ref (src);
+      td->dest = g_object_ref (dest);
       td->move = move;
       if (move)
         g_file_move_async (src, dest, G_FILE_COPY_NONE, G_PRIORITY_DEFAULT, NULL, NULL, NULL,

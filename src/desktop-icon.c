@@ -179,9 +179,19 @@ end_rename (DesktopIcon *self)
 {
   if (!self->renaming)
     return;
+  GtkRoot *root = gtk_widget_get_root (GTK_WIDGET (self));
+  GtkWidget *focus = root != NULL ? gtk_root_get_focus (root) : NULL;
+  GtkWidget *parent = gtk_widget_get_parent (GTK_WIDGET (self));
+  gboolean entry_focused = focus != NULL &&
+                           (focus == self->entry || gtk_widget_is_ancestor (focus, self->entry));
+
   self->renaming = FALSE;
   gtk_widget_set_visible (self->entry, FALSE);
   gtk_widget_set_visible (self->label, TRUE);
+  /* Hand keyboard focus back to the parent (the canvas), unless it has
+   * already moved somewhere else. */
+  if (entry_focused && parent != NULL)
+    gtk_widget_grab_focus (parent);
 }
 
 void
