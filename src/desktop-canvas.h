@@ -10,6 +10,14 @@ G_BEGIN_DECLS
 #define DESKTOP_TYPE_CANVAS (desktop_canvas_get_type ())
 G_DECLARE_FINAL_TYPE (DesktopCanvas, desktop_canvas, DESKTOP, CANVAS, GtkWidget)
 
+/* Signals:
+ *   activate-selection (void): double-click on an icon.
+ *   context-menu-requested (DesktopItem *item, double x, double y):
+ *     secondary click on an icon (item) or on empty space (item NULL),
+ *     at (x, y) in canvas coordinates.
+ *   selection-changed (void): the set of selected items changed; emitted
+ *     at most once per main-loop iteration, from an idle. */
+
 GtkWidget    *desktop_canvas_new            (DesktopModel *model);
 DesktopModel *desktop_canvas_get_model      (DesktopCanvas *self);
 /* transfer none, or NULL */

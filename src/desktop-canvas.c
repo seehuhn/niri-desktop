@@ -2,6 +2,7 @@
 
 #include <math.h>
 
+#include "actions.h"
 #include "desktop-layout.h"
 #include "settings.h"
 
@@ -13,6 +14,7 @@ struct _DesktopCanvas
   GHashTable   *icons;   /* DesktopItem* -> DesktopIcon* (both unowned) */
   GtkAdjustment *vadj;   /* parent's vertical adjustment while rooted */
   guint         page_tick;  /* pending resize after a page-size change */
+  guint         selection_idle;  /* pending selection-changed emission */
 
   double        press_x, press_y;  /* last press, canvas coordinates */
   DesktopItem  *focus_item;        /* most recently selected, unowned */
@@ -30,6 +32,7 @@ G_DEFINE_FINAL_TYPE (DesktopCanvas, desktop_canvas, GTK_TYPE_WIDGET)
 enum {
   SIGNAL_ACTIVATE_SELECTION,
   SIGNAL_CONTEXT_MENU_REQUESTED,
+  SIGNAL_SELECTION_CHANGED,
   N_SIGNALS
 };
 
@@ -83,6 +86,24 @@ nth_icon (DesktopCanvas *self,
 }
 
 /* ---- selection ---- */
+
+static void
+emit_selection_changed (gpointer data)
+{
+  DesktopCanvas *self = data;
+
+  self->selection_idle = 0;
+  g_signal_emit (self, signals[SIGNAL_SELECTION_CHANGED], 0);
+}
+
+/* Coalesces the per-item notifications into one emission per main-loop
+ * iteration. */
+static void
+queue_selection_changed (DesktopCanvas *self)
+{
+  if (self->selection_idle == 0)
+    self->selection_idle = g_idle_add_once (emit_selection_changed, self);
+}
 
 static gboolean
 is_selected (DesktopItem *item)
@@ -525,6 +546,19 @@ on_key_pressed (GtkEventControllerKey *controller G_GNUC_UNUSED,
 
 /* ---- children ---- */
 
+static gboolean
+on_rename_requested (DesktopIcon   *icon,
+                     const char    *new_name,
+                     DesktopCanvas *self)
+{
+  DesktopItem *item = desktop_icon_get_item (icon);
+  GtkRoot *root = gtk_widget_get_root (GTK_WIDGET (self));
+
+  /* actions_rename reports a failure itself. */
+  return actions_rename (GTK_IS_WINDOW (root) ? GTK_WINDOW (root) : NULL,
+                         desktop_item_get_file (item), new_name, NULL);
+}
+
 static void
 remove_icon (DesktopCanvas *self,
              GtkWidget     *icon)
@@ -536,6 +570,9 @@ remove_icon (DesktopCanvas *self,
   if (self->pending_single == item)
     self->pending_single = NULL;
   g_signal_handlers_disconnect_by_func (item, queue_resize, self);
+  g_signal_handlers_disconnect_by_func (item, queue_selection_changed, self);
+  if (is_selected (item))
+    queue_selection_changed (self);
   g_hash_table_remove (self->icons, item);
   gtk_widget_unparent (icon);
 }
@@ -565,7 +602,12 @@ on_items_changed (GListModel    *list,
       gtk_widget_insert_after (icon, GTK_WIDGET (self), prev);
       g_hash_table_insert (self->icons, item, icon);
       g_signal_connect_swapped (item, "notify::position", G_CALLBACK (queue_resize), self);
+      g_signal_connect_swapped (item, "notify::selected",
+                                G_CALLBACK (queue_selection_changed), self);
       g_signal_connect (icon, "clicked", G_CALLBACK (on_icon_clicked), self);
+      g_signal_connect (icon, "rename-requested", G_CALLBACK (on_rename_requested), self);
+      if (is_selected (item))
+        queue_selection_changed (self);
       prev = icon;
     }
 
@@ -626,11 +668,34 @@ desktop_canvas_dispose (GObject *object)
                                           on_items_changed, self);
   disconnect_vadj (self);
   while ((child = gtk_widget_get_first_child (GTK_WIDGET (self))) != NULL)
-    remove_icon (self, child);
+    {
+      if (DESKTOP_IS_ICON (child))
+        remove_icon (self, child);
+      else
+        gtk_widget_unparent (child);  /* an open context menu */
+    }
+  g_clear_handle_id (&self->selection_idle, g_source_remove);
   g_clear_object (&self->model);
   g_clear_pointer (&self->icons, g_hash_table_unref);
 
   G_OBJECT_CLASS (desktop_canvas_parent_class)->dispose (object);
+}
+
+/* Popovers parented to the canvas (context menus) follow it. */
+static void
+desktop_canvas_size_allocate (GtkWidget *widget,
+                              int        width,
+                              int        height,
+                              int        baseline)
+{
+  GtkWidget *child;
+
+  GTK_WIDGET_CLASS (desktop_canvas_parent_class)->size_allocate (widget, width, height, baseline);
+  for (child = gtk_widget_get_first_child (widget);
+       child != NULL;
+       child = gtk_widget_get_next_sibling (child))
+    if (GTK_IS_POPOVER (child))
+      gtk_popover_present (GTK_POPOVER (child));
 }
 
 static void
@@ -643,6 +708,7 @@ desktop_canvas_class_init (DesktopCanvasClass *klass)
   widget_class->root = desktop_canvas_root;
   widget_class->unroot = desktop_canvas_unroot;
   widget_class->snapshot = desktop_canvas_snapshot;
+  widget_class->size_allocate = desktop_canvas_size_allocate;
   gtk_widget_class_set_layout_manager_type (widget_class, DESKTOP_TYPE_LAYOUT);
   gtk_widget_class_set_css_name (widget_class, "desktopcanvas");
 
@@ -654,6 +720,10 @@ desktop_canvas_class_init (DesktopCanvasClass *klass)
     g_signal_new ("context-menu-requested", G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST,
                   0, NULL, NULL, NULL,
                   G_TYPE_NONE, 3, DESKTOP_TYPE_ITEM, G_TYPE_DOUBLE, G_TYPE_DOUBLE);
+  signals[SIGNAL_SELECTION_CHANGED] =
+    g_signal_new ("selection-changed", G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST,
+                  0, NULL, NULL, NULL,
+                  G_TYPE_NONE, 0);
 }
 
 static void
