@@ -8,3 +8,5 @@ test('desktop-item', executable('test-desktop-item', 'test-desktop-item.c',
   lib_sources, dependencies: lnxdesktop_deps, include_directories: lnxdesktop_inc))
 test('desktop-model', executable('test-desktop-model', 'test-desktop-model.c',
   lib_sources, dependencies: lnxdesktop_deps, include_directories: lnxdesktop_inc))
+test('thumbnails', executable('test-thumbnails', 'test-thumbnails.c',
+  lib_sources, dependencies: lnxdesktop_deps, include_directories: lnxdesktop_inc))
