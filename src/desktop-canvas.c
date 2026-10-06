@@ -25,7 +25,18 @@ struct _DesktopCanvas
   gboolean      band_add;          /* Ctrl held: the band only adds */
   double        band_x, band_y;    /* origin */
   graphene_rect_t band;
+
+  /* The drag started from one of our icons, or drag_source_item NULL. */
+  DesktopItem  *drag_source_item;  /* owned */
+  double        drag_hot_x, drag_hot_y;  /* pointer inside the dragged icon */
+  GArray       *drag_offsets;      /* DragOffset, one per dragged item */
 };
+
+typedef struct
+{
+  DesktopItem *item;  /* owned */
+  double       dx, dy;  /* allocation origin minus the dragged icon's */
+} DragOffset;
 
 G_DEFINE_FINAL_TYPE (DesktopCanvas, desktop_canvas, GTK_TYPE_WIDGET)
 
@@ -544,6 +555,175 @@ on_key_pressed (GtkEventControllerKey *controller G_GNUC_UNUSED,
     }
 }
 
+/* ---- drag and drop ---- */
+
+static void
+drag_offset_clear (gpointer data)
+{
+  DragOffset *off = data;
+
+  g_clear_object (&off->item);
+}
+
+static void
+clear_drag (DesktopCanvas *self)
+{
+  g_clear_object (&self->drag_source_item);
+  if (self->drag_offsets != NULL)
+    g_array_set_size (self->drag_offsets, 0);
+}
+
+static GList *
+canvas_drag_files (DesktopIcon *icon,
+                   gpointer     data)
+{
+  DesktopCanvas *self = data;
+  DesktopItem *item = desktop_icon_get_item (icon);
+
+  if (!is_selected (item))
+    select_only (self, item);
+  return desktop_canvas_get_selected_files (self);
+}
+
+static void
+on_icon_drag_prepared (DesktopIcon   *icon,
+                       double         x,
+                       double         y,
+                       DesktopCanvas *self)
+{
+  graphene_rect_t origin;
+  GList *selected, *l;
+
+  clear_drag (self);
+  if (!gtk_widget_compute_bounds (GTK_WIDGET (icon), GTK_WIDGET (self), &origin))
+    return;
+
+  self->drag_source_item = g_object_ref (desktop_icon_get_item (icon));
+  self->drag_hot_x = x;
+  self->drag_hot_y = y;
+
+  selected = desktop_canvas_get_selected_items (self);
+  for (l = selected; l != NULL; l = l->next)
+    {
+      GtkWidget *other = g_hash_table_lookup (self->icons, l->data);
+      graphene_rect_t b;
+      DragOffset off;
+
+      if (other == NULL || !gtk_widget_compute_bounds (other, GTK_WIDGET (self), &b))
+        continue;
+      off.item = g_object_ref (l->data);
+      off.dx = b.origin.x - origin.origin.x;
+      off.dy = b.origin.y - origin.origin.y;
+      g_array_append_val (self->drag_offsets, off);
+    }
+  g_list_free (selected);
+}
+
+static void
+on_icon_drag_ended (DesktopIcon   *icon G_GNUC_UNUSED,
+                    DesktopCanvas *self)
+{
+  clear_drag (self);
+}
+
+/* Whether the drop comes from a drag that one of our icons started. */
+static gboolean
+is_local_drop (DesktopCanvas *self,
+               GdkDrop       *drop)
+{
+  return drop != NULL && gdk_drop_get_drag (drop) != NULL
+         && self->drag_source_item != NULL;
+}
+
+static gboolean
+on_drop_accept (GtkDropTarget *target G_GNUC_UNUSED,
+                GdkDrop       *drop,
+                DesktopCanvas *self G_GNUC_UNUSED)
+{
+  return gdk_content_formats_contain_gtype (gdk_drop_get_formats (drop), GDK_TYPE_FILE_LIST);
+}
+
+static GdkDragAction
+on_drop_motion (GtkDropTarget *target,
+                double         x G_GNUC_UNUSED,
+                double         y G_GNUC_UNUSED,
+                DesktopCanvas *self)
+{
+  GdkDrop *drop = gtk_drop_target_get_current_drop (target);
+
+  if (is_local_drop (self, drop))
+    return GDK_ACTION_MOVE;
+  /* External drags copy, unless the source only offers a move. */
+  if (drop != NULL && gdk_drop_get_actions (drop) == GDK_ACTION_MOVE)
+    return GDK_ACTION_MOVE;
+  return GDK_ACTION_COPY;
+}
+
+/* Moves every dragged item so that the dragged icon's hot spot lands on
+ * (x, y), keeping the items' offsets, and stores the new positions. */
+static void
+move_dragged_items (DesktopCanvas *self,
+                    double         x,
+                    double         y)
+{
+  guint i;
+
+  for (i = 0; i < self->drag_offsets->len; i++)
+    {
+      DragOffset *off = &g_array_index (self->drag_offsets, DragOffset, i);
+      int nx, ny;
+
+      /* Skip items deleted during the drag; their key is gone. */
+      if (!g_hash_table_contains (self->icons, off->item))
+        continue;
+      nx = (int) (x - self->drag_hot_x + off->dx);
+      ny = (int) (y - self->drag_hot_y + off->dy);
+
+      desktop_model_set_position (self->model, off->item, MAX (0, nx), MAX (0, ny));
+    }
+  clear_drag (self);
+}
+
+static gboolean
+on_drop (GtkDropTarget *target,
+         const GValue  *value,
+         double         x,
+         double         y,
+         DesktopCanvas *self)
+{
+  GdkDrop *drop = gtk_drop_target_get_current_drop (target);
+  int icon_size = settings_get_icon_size ();
+  int pitch_w = settings_pitch_width (icon_size);
+  int pitch_h = settings_pitch_height (icon_size);
+  GtkRoot *root;
+  GSList *sl;
+  GList *files = NULL;
+  gboolean move;
+
+  if (is_local_drop (self, drop))
+    {
+      move_dragged_items (self, x, y);
+      return TRUE;
+    }
+
+  if (!G_VALUE_HOLDS (value, GDK_TYPE_FILE_LIST))
+    return FALSE;
+  for (sl = gdk_file_list_get_files (g_value_get_boxed (value)); sl != NULL; sl = sl->next)
+    files = g_list_prepend (files, sl->data);
+  files = g_list_reverse (files);
+  if (files == NULL)
+    return FALSE;
+
+  move = drop != NULL && gdk_drop_get_actions (drop) == GDK_ACTION_MOVE;
+  root = gtk_widget_get_root (GTK_WIDGET (self));
+  actions_import (GTK_IS_WINDOW (root) ? GTK_WINDOW (root) : NULL, self->model, files,
+                  move, TRUE,
+                  MAX (0, (int) x - pitch_w / 2),
+                  MAX (0, (int) y - pitch_h / 2));
+  g_list_free (files);
+  return TRUE;
+}
+
 /* ---- children ---- */
 
 static gboolean
@@ -571,6 +751,9 @@ remove_icon (DesktopCanvas *self,
     self->pending_single = NULL;
   g_signal_handlers_disconnect_by_func (item, queue_resize, self);
   g_signal_handlers_disconnect_by_func (item, queue_selection_changed, self);
+  /* A drag that outlives its icon cannot report drag-ended. */
+  if (self->drag_source_item == item)
+    clear_drag (self);
   if (is_selected (item))
     queue_selection_changed (self);
   g_hash_table_remove (self->icons, item);
@@ -606,6 +789,9 @@ on_items_changed (GListModel    *list,
                                 G_CALLBACK (queue_selection_changed), self);
       g_signal_connect (icon, "clicked", G_CALLBACK (on_icon_clicked), self);
       g_signal_connect (icon, "rename-requested", G_CALLBACK (on_rename_requested), self);
+      g_signal_connect (icon, "drag-prepared", G_CALLBACK (on_icon_drag_prepared), self);
+      g_signal_connect (icon, "drag-ended", G_CALLBACK (on_icon_drag_ended), self);
+      desktop_icon_set_drag_files_func (DESKTOP_ICON (icon), canvas_drag_files, self);
       if (is_selected (item))
         queue_selection_changed (self);
       prev = icon;
@@ -675,6 +861,8 @@ desktop_canvas_dispose (GObject *object)
         gtk_widget_unparent (child);  /* an open context menu */
     }
   g_clear_handle_id (&self->selection_idle, g_source_remove);
+  clear_drag (self);
+  g_clear_pointer (&self->drag_offsets, g_array_unref);
   g_clear_object (&self->model);
   g_clear_pointer (&self->icons, g_hash_table_unref);
 
@@ -732,8 +920,11 @@ desktop_canvas_init (DesktopCanvas *self)
   GtkWidget *widget = GTK_WIDGET (self);
   GtkGesture *capture, *click, *band;
   GtkEventController *key;
+  GtkDropTarget *drop;
 
   self->icons = g_hash_table_new (NULL, NULL);
+  self->drag_offsets = g_array_new (FALSE, FALSE, sizeof (DragOffset));
+  g_array_set_clear_func (self->drag_offsets, drag_offset_clear);
 
   capture = gtk_gesture_click_new ();
   gtk_gesture_single_set_button (GTK_GESTURE_SINGLE (capture), 0);
@@ -758,6 +949,14 @@ desktop_canvas_init (DesktopCanvas *self)
   key = gtk_event_controller_key_new ();
   g_signal_connect (key, "key-pressed", G_CALLBACK (on_key_pressed), self);
   gtk_widget_add_controller (widget, key);
+
+  drop = gtk_drop_target_new (GDK_TYPE_FILE_LIST, GDK_ACTION_COPY | GDK_ACTION_MOVE);
+  g_signal_connect (drop, "accept", G_CALLBACK (on_drop_accept), self);
+  g_signal_connect (drop, "enter", G_CALLBACK (on_drop_motion), self);
+  g_signal_connect (drop, "motion", G_CALLBACK (on_drop_motion), self);
+  g_signal_connect (drop, "drop", G_CALLBACK (on_drop), self);
+  gtk_widget_add_controller (widget, GTK_EVENT_CONTROLLER (drop));
+
   gtk_widget_set_hexpand (widget, TRUE);
   gtk_widget_set_vexpand (widget, TRUE);
   gtk_widget_set_focusable (widget, TRUE);

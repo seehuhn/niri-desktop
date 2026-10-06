@@ -35,7 +35,13 @@ G_DEFINE_FINAL_TYPE (DesktopIcon, desktop_icon, GTK_TYPE_WIDGET)
 enum { PROP_ICON_SIZE = 1, N_PROPS };
 static GParamSpec *props[N_PROPS];
 
-enum { SIGNAL_CLICKED, SIGNAL_RENAME_REQUESTED, SIGNAL_DRAG_PREPARED, N_SIGNALS };
+enum {
+  SIGNAL_CLICKED,
+  SIGNAL_RENAME_REQUESTED,
+  SIGNAL_DRAG_PREPARED,
+  SIGNAL_DRAG_ENDED,
+  N_SIGNALS
+};
 static guint signals[N_SIGNALS];
 
 static gboolean
@@ -412,6 +418,15 @@ on_drag_begin (GtkDragSource *source,
   cancel_rename_timeout (self);
 }
 
+static void
+on_drag_end (GtkDragSource *source G_GNUC_UNUSED,
+             GdkDrag       *drag G_GNUC_UNUSED,
+             gboolean       delete_data G_GNUC_UNUSED,
+             gpointer       user_data)
+{
+  g_signal_emit (user_data, signals[SIGNAL_DRAG_ENDED], 0);
+}
+
 /* ---- GObject ---- */
 
 static void
@@ -514,6 +529,10 @@ desktop_icon_class_init (DesktopIconClass *klass)
     g_signal_new ("drag-prepared", G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST,
                   0, NULL, NULL, NULL,
                   G_TYPE_NONE, 2, G_TYPE_DOUBLE, G_TYPE_DOUBLE);
+  signals[SIGNAL_DRAG_ENDED] =
+    g_signal_new ("drag-ended", G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST,
+                  0, NULL, NULL, NULL,
+                  G_TYPE_NONE, 0);
 }
 
 static void
@@ -573,6 +592,7 @@ desktop_icon_init (DesktopIcon *self)
   gtk_drag_source_set_actions (drag, GDK_ACTION_COPY | GDK_ACTION_MOVE);
   g_signal_connect (drag, "prepare", G_CALLBACK (on_drag_prepare), self);
   g_signal_connect (drag, "drag-begin", G_CALLBACK (on_drag_begin), self);
+  g_signal_connect (drag, "drag-end", G_CALLBACK (on_drag_end), self);
   gtk_widget_add_controller (widget, GTK_EVENT_CONTROLLER (drag));
 
   g_signal_connect (widget, "map", G_CALLBACK (on_map), NULL);
