@@ -12,3 +12,5 @@ test('thumbnails', executable('test-thumbnails', 'test-thumbnails.c',
   lib_sources, dependencies: lnxdesktop_deps, include_directories: lnxdesktop_inc))
 test('settings', executable('test-settings', 'test-settings.c',
   lib_sources, dependencies: lnxdesktop_deps, include_directories: lnxdesktop_inc))
+test('actions', executable('test-actions', 'test-actions.c',
+  lib_sources, dependencies: lnxdesktop_deps, include_directories: lnxdesktop_inc))
