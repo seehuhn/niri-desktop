@@ -268,7 +268,17 @@ on_load_item_reloaded (GObject *source, GAsyncResult *res, gpointer data)
   g_autoptr (GError) error = NULL;
 
   if (!desktop_item_reload_finish (DESKTOP_ITEM (source), res, &error))
-    g_debug ("reload failed: %s", error->message);
+    {
+      g_debug ("reload failed: %s", error->message);
+      if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND))
+        {
+          guint i;
+          DesktopModel *model = g_task_get_source_object (task);
+
+          if (find_index (model, desktop_item_get_name (DESKTOP_ITEM (source)), &i))
+            g_list_store_remove (model->items, i);
+        }
+    }
   d->pending--;
   load_maybe_finish (task);
   g_object_unref (task);

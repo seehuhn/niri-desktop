@@ -13,10 +13,10 @@ settings_load_icon_size_from (const char *path)
   if (!g_key_file_load_from_file (kf, path, G_KEY_FILE_NONE, &err))
     return ICON_SIZE_DEFAULT;
 
-  int v = g_key_file_get_integer (kf, "desktop", "icon-size", &err);
+  gint64 v = g_key_file_get_int64 (kf, "desktop", "icon-size", &err);
   if (err != NULL)
     return ICON_SIZE_DEFAULT;
-  return CLAMP (v, ICON_SIZE_MIN, ICON_SIZE_MAX);
+  return (int) CLAMP (v, ICON_SIZE_MIN, ICON_SIZE_MAX);
 }
 
 int

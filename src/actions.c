@@ -299,6 +299,8 @@ info_label (const char *text, gboolean key)
       gtk_label_set_text (GTK_LABEL (label), text);
       gtk_label_set_xalign (GTK_LABEL (label), 0.0);
       gtk_label_set_selectable (GTK_LABEL (label), TRUE);
+      gtk_label_set_width_chars (GTK_LABEL (label), 30);
+      gtk_label_set_max_width_chars (GTK_LABEL (label), 60);
       gtk_label_set_wrap (GTK_LABEL (label), TRUE);
       gtk_label_set_wrap_mode (GTK_LABEL (label), PANGO_WRAP_WORD_CHAR);
       gtk_widget_set_hexpand (label, TRUE);

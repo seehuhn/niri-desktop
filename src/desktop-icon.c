@@ -242,6 +242,8 @@ on_entry_key_pressed (GtkEventControllerKey *controller,
   (void) keycode;
   (void) state;
 
+  if (keyval == GDK_KEY_F2)
+    return GDK_EVENT_STOP;        /* do not restart the rename */
   if (keyval != GDK_KEY_Escape)
     return GDK_EVENT_PROPAGATE;
   end_rename (DESKTOP_ICON (user_data));

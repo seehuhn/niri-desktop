@@ -121,6 +121,7 @@ test_corrupt (Fixture *f, gconstpointer data)
   int x, y;
   const char *junk = "not a keyfile\n[\n";
   g_assert_true (g_file_set_contents (f->path, junk, -1, NULL));
+  g_test_expect_message (G_LOG_DOMAIN, G_LOG_LEVEL_MESSAGE, "Cannot load *");
   PositionStore *s = position_store_new (f->path);
   g_assert_false (position_store_lookup (s, "anything", &x, &y));
   position_store_free (s);
@@ -129,6 +130,23 @@ test_corrupt (Fixture *f, gconstpointer data)
   g_autofree char *contents = NULL;
   g_assert_true (g_file_get_contents (bak, &contents, NULL, NULL));
   g_assert_cmpstr (contents, ==, junk);
+}
+
+static void
+test_non_integer (Fixture *f, gconstpointer data)
+{
+  (void) data;
+  int x = -1, y = -1;
+  g_assert_true (g_file_set_contents (f->path,
+                                     "[a]\nx=abc\ny=5\n\n[b]\nx=5\ny=1.5\n\n[c]\nx=3\n",
+                                     -1, NULL));
+  PositionStore *s = position_store_new (f->path);
+  g_assert_false (position_store_lookup (s, "a", &x, &y));
+  g_assert_false (position_store_lookup (s, "b", &x, &y));
+  g_assert_false (position_store_lookup (s, "c", &x, &y));
+  g_assert_cmpint (x, ==, -1);
+  g_assert_cmpint (y, ==, -1);
+  position_store_free (s);
 }
 
 static void
@@ -171,6 +189,7 @@ main (int argc, char **argv)
   T ("rename", test_rename);
   T ("remove", test_remove);
   T ("corrupt-renamed-to-bak", test_corrupt);
+  T ("non-integer-is-missing", test_non_integer);
   T ("free-flushes", test_free_flushes);
   T ("anchor-key-written", test_anchor);
   return g_test_run ();

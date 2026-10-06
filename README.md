@@ -35,3 +35,15 @@ values are clamped to the range 32 to 128. The grid pitch follows from it
 (width + 16, height + 48). The file is read once at startup.
 
 For development, the environment variable `LNXDESKTOP_DIR` replaces the Desktop directory.
+
+## Status
+
+All features are implemented and the unit and model tests pass. The manual
+release checklist has not been run yet and needs a human pass (it requires
+real input devices and a second screen):
+
+- [ ] Drag an icon to a text editor in another column; the path arrives. (needs a human pass)
+- [ ] Drop a file from a file manager onto the window; it appears at the drop point. (needs a human pass)
+- [ ] Toggle the column between full and half width; icons park and return. (needs a human pass)
+- [ ] Move the window between the 2x and 1x screens; icons stay crisp and the arrangement is unchanged when moved back. (needs a human pass)
+- [ ] Rename, trash, copy and paste, Open With..., Info. (needs a human pass)

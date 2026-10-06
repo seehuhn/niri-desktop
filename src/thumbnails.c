@@ -2,6 +2,7 @@
 
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <glib/gstdio.h>
+#include <unistd.h>
 
 #define THUMB_SIZE 256
 
@@ -101,6 +102,8 @@ load_thread (GTask *task, G_GNUC_UNUSED gpointer source, gpointer task_data,
                                    "Not a local file");
           return;
         }
+      if (g_task_return_error_if_cancelled (task))
+        return;
       raw = gdk_pixbuf_new_from_file_at_scale (path, THUMB_SIZE, THUMB_SIZE, TRUE, &error);
       if (raw == NULL)
         {
@@ -119,7 +122,17 @@ load_thread (GTask *task, G_GNUC_UNUSED gpointer source, gpointer task_data,
 
           if (mtime == NULL)
             keys[1] = NULL;
-          gdk_pixbuf_savev (pb, cache_path, "png", (char **) keys, (char **) vals, NULL);
+          g_autofree char *tmp = g_strdup_printf ("%s.tmp-%d", cache_path, (int) getpid ());
+
+          if (gdk_pixbuf_savev (pb, tmp, "png", (char **) keys, (char **) vals, NULL))
+            {
+              if (g_rename (tmp, cache_path) == 0)
+                g_chmod (cache_path, 0600);
+              else
+                g_remove (tmp);
+            }
+          else
+            g_remove (tmp);
         }
     }
 

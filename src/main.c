@@ -201,7 +201,6 @@ static const struct
   { "win.copy", "<Control>c" },
   { "win.paste", "<Control>v" },
   { "win.select-all", "<Control>a" },
-  { "win.info", "<Control>i" },
 };
 
 static void
@@ -306,7 +305,7 @@ on_context_menu_requested (DesktopCanvas *canvas,
       append_section (menu, "Rename", "win.rename", "F2", NULL);
       append_section (menu, "Copy", "win.copy", "<Control>c", NULL);
       append_section (menu, "Move to Trash", "win.trash", "Delete", NULL);
-      append_section (menu, "Info", "win.info", "<Control>i", NULL);
+      append_section (menu, "Info", "win.info", NULL, NULL);
     }
   else
     {
@@ -329,8 +328,9 @@ on_context_menu_requested (DesktopCanvas *canvas,
 
 static void
 on_activate_selection (DesktopCanvas *canvas,
-                       App           *app G_GNUC_UNUSED)
+                       App           *app)
 {
+  update_actions (app);
   gtk_widget_activate_action (GTK_WIDGET (canvas), "win.open", NULL);
 }
 

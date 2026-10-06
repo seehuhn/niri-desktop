@@ -75,15 +75,16 @@ gboolean
 position_store_lookup (PositionStore *store, const char *name, int *x, int *y)
 {
   g_autofree char *group = group_name (name);
+  g_autoptr (GError) error_x = NULL;
+  g_autoptr (GError) error_y = NULL;
   int px, py;
 
   if (!g_key_file_has_group (store->keyfile, group))
     return FALSE;
 
-  px = g_key_file_get_integer (store->keyfile, group, "x", NULL);
-  py = g_key_file_get_integer (store->keyfile, group, "y", NULL);
-  if (!g_key_file_has_key (store->keyfile, group, "x", NULL) ||
-      !g_key_file_has_key (store->keyfile, group, "y", NULL))
+  px = g_key_file_get_integer (store->keyfile, group, "x", &error_x);
+  py = g_key_file_get_integer (store->keyfile, group, "y", &error_y);
+  if (error_x != NULL || error_y != NULL)
     return FALSE;
 
   if (x != NULL)

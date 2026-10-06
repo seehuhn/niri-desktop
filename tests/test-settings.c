@@ -34,6 +34,7 @@ test_clamps (void)
 {
   g_assert_cmpint (load_with ("[desktop]\nicon-size=500\n"), ==, 128);
   g_assert_cmpint (load_with ("[desktop]\nicon-size=4\n"), ==, 32);
+  g_assert_cmpint (load_with ("[desktop]\nicon-size=99999999999\n"), ==, 128);
   g_assert_cmpint (load_with ("[desktop]\nicon-size=abc\n"), ==, 64);
   g_assert_cmpint (load_with ("[other]\nicon-size=48\n"), ==, 64);
   g_assert_cmpint (load_with ("[desktop]\nfoo=1\n"), ==, 64);
