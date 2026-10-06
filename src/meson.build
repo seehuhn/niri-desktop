@@ -1,4 +1,4 @@
-lib_sources = files()
+lib_sources = files('position-store.c')
 
 executable('lnxdesktop',
   lib_sources + files('main.c') + [lnxdesktop_resources],
