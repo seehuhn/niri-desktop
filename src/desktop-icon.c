@@ -307,7 +307,10 @@ on_click_pressed (GtkGestureClick *gesture,
       && item_is_selected (self->item)
       && point_in_label (self, x, y))
     {
+      /* The canvas narrows a multi-selection to this item on release,
+       * so the rename starts on a single selection. */
       self->rename_pending = TRUE;
+      g_signal_emit (self, signals[SIGNAL_CLICKED], 0, (int) button, n_press, state);
       return;
     }
 

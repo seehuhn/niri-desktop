@@ -306,18 +306,18 @@ on_band_begin (GtkGestureDrag *gesture,
                double          y,
                DesktopCanvas  *self)
 {
-  GtkWidget *hit = gtk_widget_pick (GTK_WIDGET (self), x, y, GTK_PICK_DEFAULT);
   GdkModifierType state =
     gtk_event_controller_get_current_event_state (GTK_EVENT_CONTROLLER (gesture));
 
   self->band_moved = FALSE;
-  if (hit != GTK_WIDGET (self))
+  if (pick_is_icon (self, x, y))
     {
       gtk_gesture_set_state (GTK_GESTURE (gesture), GTK_EVENT_SEQUENCE_DENIED);
       return;
     }
 
-  self->band_add = (state & GDK_CONTROL_MASK) != 0;
+  /* Ctrl or Shift: the band adds to the selection. */
+  self->band_add = (state & (GDK_CONTROL_MASK | GDK_SHIFT_MASK)) != 0;
   if (!self->band_add)
     set_all_selected (self, FALSE);
   self->band_active = TRUE;
@@ -354,7 +354,12 @@ on_band_update (GtkGestureDrag *gesture G_GNUC_UNUSED,
       if (!DESKTOP_IS_ICON (child)
           || !gtk_widget_compute_bounds (child, GTK_WIDGET (self), &bounds))
         continue;
-      hit = graphene_rect_intersection (&self->band, &bounds, NULL);
+      /* Compare edges by hand: graphene_rect_intersection reports no
+       * intersection for a zero-width or zero-height band. */
+      hit = self->band.origin.x <= bounds.origin.x + bounds.size.width
+            && bounds.origin.x <= self->band.origin.x + self->band.size.width
+            && self->band.origin.y <= bounds.origin.y + bounds.size.height
+            && bounds.origin.y <= self->band.origin.y + self->band.size.height;
       if (hit)
         set_selected (desktop_icon_get_item (DESKTOP_ICON (child)), TRUE);
       else if (!self->band_add)
