@@ -33,3 +33,5 @@ Optional settings live in `~/.config/lnxdesktop/config.ini`:
 `icon-size` is the picture size in logical pixels. The default is 64 and
 values are clamped to the range 32 to 128. The grid pitch follows from it
 (width + 16, height + 48). The file is read once at startup.
+
+For development, the environment variable `LNXDESKTOP_DIR` replaces the Desktop directory.
