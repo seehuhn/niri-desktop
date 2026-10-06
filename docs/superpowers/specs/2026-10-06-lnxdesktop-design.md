@@ -72,8 +72,8 @@ Nothing below `desktop-canvas` and `desktop-icon` knows about widgets.
 ### Modules
 
 **`desktop-item.c`** — `DesktopItem`, a GObject holding: the `GFile`; the
-cached `GFileInfo` (display name, content type, size, mtime); the icon
-`GdkPaintable`; the stored position, or "none"; selection state. Provides an
+cached `GFileInfo` (display name, content type, size, mtime); the file's
+`GIcon`; the stored position, or "none"; selection state. Provides an
 async `reload()` that re-queries info and icon.
 
 **`desktop-model.c`** — `DesktopModel`: owns a `GListStore` of `DesktopItem`
@@ -99,8 +99,9 @@ picture above a label that wraps to two lines and then ellipsizes in the
 middle. Swaps in a `GtkEntry` for rename. Owns its `GtkDragSource`, click
 gestures and the `selected` CSS state.
 
-**`desktop-canvas.c`** — `DesktopCanvas`, a `GtkFixed` subclass placed inside
-a `GtkScrolledWindow` (vertical scrolling only). Binds to the model, creates
+**`desktop-canvas.c`** — `DesktopCanvas`, a `GtkWidget` with a custom
+`GtkLayoutManager` (`DesktopLayout`, which calls `layout.c`), placed inside a
+`GtkScrolledWindow` (vertical scrolling only). Binds to the model, creates
 and removes icons on `items-changed`, runs the layout pass on size change,
 draws the rubber band in `snapshot()`, owns the `GtkDropTarget`, the context
 menu, keyboard shortcuts and selection.
@@ -122,8 +123,8 @@ window, loads `style.css` from GResource.
 Stored positions are absolute logical pixels from the top-left of the canvas,
 exactly where the user dropped the icon. No snapping. Overlaps are allowed.
 
-The layout pass runs on size change, on item add or remove, and when an icon
-first learns its size. It produces a *display layout* and writes nothing to
+The layout pass runs inside the canvas's layout manager, so it happens on
+every size change and whenever an icon is added, removed or resized. It produces a *display layout* and writes nothing to
 disk:
 
 1. Order items: those with a stored position first, in stored order; then
@@ -154,14 +155,15 @@ label below.
 on empty canvas clears and starts a rubber band; Ctrl+A selects all; Escape
 clears. Right-click on an unselected icon selects it first.
 
-**Move within the window.** A `GtkGestureDrag` on the canvas moves the whole
-selection live, keeping relative offsets. On release each moved icon's stored
-position becomes its new top-left and the store is written.
+**Move within the window.** Uses the same drag-and-drop machinery as
+dragging out: the drag shows the icon's picture, and a drop on the canvas
+itself (detected because the drop carries a local `GdkDrag`) moves the whole
+selection, keeping relative offsets. Each moved icon's stored position becomes
+its new top-left and the store is written.
 
 **Drag out.** Each `DesktopIcon` has a `GtkDragSource` offering a
 `GdkFileList` of all selected files, with actions copy and move, and the
-icon's picture as drag icon. The canvas's drop target ignores drops whose
-source is this window; those are handled as a move.
+icon's picture as drag icon.
 
 **Drop in.** The canvas `GtkDropTarget` accepts `GdkFileList`. Files already
 in `~/Desktop/` are repositioned to the drop point. Others are copied with
