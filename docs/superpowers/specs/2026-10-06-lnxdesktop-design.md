@@ -153,8 +153,8 @@ placements.
 
 The picture size is configurable: key `icon-size` in group `[desktop]` of
 `~/.config/lnxdesktop/config.ini`, default 64, clamped to 32–128 logical
-pixels. Grid pitch is derived: width = size + 16, height = size + 32 (so
-80 × 96 at the default). A two-line label sits below the picture.
+pixels. Grid pitch is derived: width = size + 16, height = size + 48 (so
+80 × 112 at the default, room for two label lines). A two-line label sits below the picture.
 
 ## Interaction
 
