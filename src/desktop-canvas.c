@@ -635,14 +635,6 @@ is_local_drop (DesktopCanvas *self,
          && self->drag_source_item != NULL;
 }
 
-static gboolean
-on_drop_accept (GtkDropTarget *target G_GNUC_UNUSED,
-                GdkDrop       *drop,
-                DesktopCanvas *self G_GNUC_UNUSED)
-{
-  return gdk_content_formats_contain_gtype (gdk_drop_get_formats (drop), GDK_TYPE_FILE_LIST);
-}
-
 static GdkDragAction
 on_drop_motion (GtkDropTarget *target,
                 double         x G_GNUC_UNUSED,
@@ -696,7 +688,7 @@ on_drop (GtkDropTarget *target,
   int pitch_w = settings_pitch_width (icon_size);
   int pitch_h = settings_pitch_height (icon_size);
   GtkRoot *root;
-  GSList *sl;
+  GSList *slist, *sl;
   GList *files = NULL;
   gboolean move;
 
@@ -708,9 +700,12 @@ on_drop (GtkDropTarget *target,
 
   if (!G_VALUE_HOLDS (value, GDK_TYPE_FILE_LIST))
     return FALSE;
-  for (sl = gdk_file_list_get_files (g_value_get_boxed (value)); sl != NULL; sl = sl->next)
+  /* transfer container */
+  slist = gdk_file_list_get_files (g_value_get_boxed (value));
+  for (sl = slist; sl != NULL; sl = sl->next)
     files = g_list_prepend (files, sl->data);
   files = g_list_reverse (files);
+  g_slist_free (slist);
   if (files == NULL)
     return FALSE;
 
@@ -751,9 +746,6 @@ remove_icon (DesktopCanvas *self,
     self->pending_single = NULL;
   g_signal_handlers_disconnect_by_func (item, queue_resize, self);
   g_signal_handlers_disconnect_by_func (item, queue_selection_changed, self);
-  /* A drag that outlives its icon cannot report drag-ended. */
-  if (self->drag_source_item == item)
-    clear_drag (self);
   if (is_selected (item))
     queue_selection_changed (self);
   g_hash_table_remove (self->icons, item);
@@ -951,7 +943,6 @@ desktop_canvas_init (DesktopCanvas *self)
   gtk_widget_add_controller (widget, key);
 
   drop = gtk_drop_target_new (GDK_TYPE_FILE_LIST, GDK_ACTION_COPY | GDK_ACTION_MOVE);
-  g_signal_connect (drop, "accept", G_CALLBACK (on_drop_accept), self);
   g_signal_connect (drop, "enter", G_CALLBACK (on_drop_motion), self);
   g_signal_connect (drop, "motion", G_CALLBACK (on_drop_motion), self);
   g_signal_connect (drop, "drop", G_CALLBACK (on_drop), self);
