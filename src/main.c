@@ -50,12 +50,21 @@ on_load_finished (GObject      *source,
 static void
 on_activate (GApplication *app)
 {
-  g_autoptr (GFile) dir = desktop_directory ();
-  g_autofree char *positions = g_build_filename (g_get_user_config_dir (), "lnxdesktop",
-                                                 "positions.ini", NULL);
-  g_autoptr (DesktopModel) model = desktop_model_new (dir, position_store_new (positions));
+  g_autoptr (GFile) dir = NULL;
+  g_autofree char *positions = NULL;
+  g_autoptr (DesktopModel) model = NULL;
+  GtkWindow *existing = gtk_application_get_active_window (GTK_APPLICATION (app));
   GtkWidget *window, *box, *scrolled, *canvas;
 
+  if (existing != NULL)
+    {
+      gtk_window_present (existing);
+      return;
+    }
+
+  dir = desktop_directory ();
+  positions = g_build_filename (g_get_user_config_dir (), "lnxdesktop", "positions.ini", NULL);
+  model = desktop_model_new (dir, position_store_new (positions));
   load_css ();
   window = gtk_application_window_new (GTK_APPLICATION (app));
   gtk_window_set_title (GTK_WINDOW (window), "Desktop");

@@ -9,25 +9,57 @@ struct _DesktopCanvas
 
   DesktopModel *model;
   GHashTable   *icons;   /* DesktopItem* -> DesktopIcon* (both unowned) */
+  GtkAdjustment *vadj;   /* parent's vertical adjustment while rooted */
+  guint         page_tick;  /* pending resize after a page-size change */
 };
 
 G_DEFINE_FINAL_TYPE (DesktopCanvas, desktop_canvas, GTK_TYPE_WIDGET)
 
-static void
-on_item_position (DesktopCanvas *self)
+static gboolean
+page_size_tick (GtkWidget     *widget,
+                GdkFrameClock *clock G_GNUC_UNUSED,
+                gpointer       data G_GNUC_UNUSED)
 {
-  gtk_widget_queue_allocate (GTK_WIDGET (self));
+  DESKTOP_CANVAS (widget)->page_tick = 0;
+  gtk_widget_queue_resize (widget);
+  return G_SOURCE_REMOVE;
 }
 
-static GtkWidget *
-nth_child (DesktopCanvas *self,
-           guint          n)
+/* The viewport updates its page size while it allocates the canvas, after
+ * measuring it, and a resize queued at that point is dropped when the
+ * allocation finishes.  Queue the resize on the next frame instead. */
+static void
+on_page_size (DesktopCanvas *self)
 {
-  GtkWidget *child = gtk_widget_get_first_child (GTK_WIDGET (self));
+  if (self->page_tick == 0)
+    self->page_tick = gtk_widget_add_tick_callback (GTK_WIDGET (self), page_size_tick,
+                                                    NULL, NULL);
+}
 
-  while (child != NULL && n-- > 0)
-    child = gtk_widget_get_next_sibling (child);
-  return child;
+/* A position change can change the content height, hence a full resize. */
+static void
+queue_resize (DesktopCanvas *self)
+{
+  gtk_widget_queue_resize (GTK_WIDGET (self));
+}
+
+/* The n-th DesktopIcon child (other children are skipped), or NULL. */
+static GtkWidget *
+nth_icon (DesktopCanvas *self,
+          guint          n)
+{
+  GtkWidget *child;
+
+  for (child = gtk_widget_get_first_child (GTK_WIDGET (self));
+       child != NULL;
+       child = gtk_widget_get_next_sibling (child))
+    {
+      if (!DESKTOP_IS_ICON (child))
+        continue;
+      if (n-- == 0)
+        return child;
+    }
+  return NULL;
 }
 
 static void
@@ -36,7 +68,7 @@ remove_icon (DesktopCanvas *self,
 {
   DesktopItem *item = desktop_icon_get_item (DESKTOP_ICON (icon));
 
-  g_signal_handlers_disconnect_by_func (item, on_item_position, self);
+  g_signal_handlers_disconnect_by_func (item, queue_resize, self);
   g_hash_table_remove (self->icons, item);
   gtk_widget_unparent (icon);
 }
@@ -52,15 +84,11 @@ on_items_changed (GListModel    *list,
   GtkWidget *prev;
   guint i;
 
+  g_return_if_fail (removed == 0 || nth_icon (self, position + removed - 1) != NULL);
   for (i = 0; i < removed; i++)
-    {
-      GtkWidget *child = nth_child (self, position);
+    remove_icon (self, nth_icon (self, position));
 
-      g_return_if_fail (child != NULL);
-      remove_icon (self, child);
-    }
-
-  prev = position > 0 ? nth_child (self, position - 1) : NULL;
+  prev = position > 0 ? nth_icon (self, position - 1) : NULL;
   for (i = 0; i < added; i++)
     {
       g_autoptr (DesktopItem) item = g_list_model_get_item (list, position + i);
@@ -69,12 +97,54 @@ on_items_changed (GListModel    *list,
       /* prev == NULL inserts as the first child */
       gtk_widget_insert_after (icon, GTK_WIDGET (self), prev);
       g_hash_table_insert (self->icons, item, icon);
-      g_signal_connect_swapped (item, "notify::position", G_CALLBACK (on_item_position), self);
+      g_signal_connect_swapped (item, "notify::position", G_CALLBACK (queue_resize), self);
       prev = icon;
     }
 
   if (removed > 0 || added > 0)
     gtk_widget_queue_resize (GTK_WIDGET (self));
+}
+
+static void
+desktop_canvas_root (GtkWidget *widget)
+{
+  DesktopCanvas *self = DESKTOP_CANVAS (widget);
+  GtkWidget *parent;
+
+  GTK_WIDGET_CLASS (desktop_canvas_parent_class)->root (widget);
+
+  parent = gtk_widget_get_parent (widget);
+  if (GTK_IS_SCROLLABLE (parent))
+    {
+      GtkAdjustment *vadj = gtk_scrollable_get_vadjustment (GTK_SCROLLABLE (parent));
+
+      if (vadj != NULL)
+        {
+          self->vadj = g_object_ref (vadj);
+          g_signal_connect_swapped (vadj, "notify::page-size", G_CALLBACK (on_page_size), self);
+        }
+    }
+}
+
+static void
+disconnect_vadj (DesktopCanvas *self)
+{
+  if (self->vadj == NULL)
+    return;
+  g_signal_handlers_disconnect_by_func (self->vadj, on_page_size, self);
+  g_clear_object (&self->vadj);
+  if (self->page_tick != 0)
+    {
+      gtk_widget_remove_tick_callback (GTK_WIDGET (self), self->page_tick);
+      self->page_tick = 0;
+    }
+}
+
+static void
+desktop_canvas_unroot (GtkWidget *widget)
+{
+  disconnect_vadj (DESKTOP_CANVAS (widget));
+  GTK_WIDGET_CLASS (desktop_canvas_parent_class)->unroot (widget);
 }
 
 static void
@@ -86,6 +156,7 @@ desktop_canvas_dispose (GObject *object)
   if (self->model != NULL)
     g_signal_handlers_disconnect_by_func (desktop_model_get_items (self->model),
                                           on_items_changed, self);
+  disconnect_vadj (self);
   while ((child = gtk_widget_get_first_child (GTK_WIDGET (self))) != NULL)
     remove_icon (self, child);
   g_clear_object (&self->model);
@@ -101,6 +172,8 @@ desktop_canvas_class_init (DesktopCanvasClass *klass)
   GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (klass);
 
   object_class->dispose = desktop_canvas_dispose;
+  widget_class->root = desktop_canvas_root;
+  widget_class->unroot = desktop_canvas_unroot;
   gtk_widget_class_set_layout_manager_type (widget_class, DESKTOP_TYPE_LAYOUT);
   gtk_widget_class_set_css_name (widget_class, "desktopcanvas");
 }

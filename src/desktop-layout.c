@@ -11,15 +11,19 @@ struct _DesktopLayout
 
 G_DEFINE_FINAL_TYPE (DesktopLayout, desktop_layout, GTK_TYPE_LAYOUT_MANAGER)
 
-/* Height of the visible area: the parent GtkViewport's height, or 0. */
+/* Height of the visible area: the page size of the parent scrollable's
+ * vertical adjustment, or 0.  The canvas queues a resize whenever the
+ * page size changes, so measure may depend on it. */
 static int
 viewport_height (GtkWidget *widget)
 {
   GtkWidget *parent = gtk_widget_get_parent (widget);
+  GtkAdjustment *vadj;
 
-  if (GTK_IS_VIEWPORT (parent))
-    return gtk_widget_get_height (parent);
-  return 0;
+  if (!GTK_IS_SCROLLABLE (parent))
+    return 0;
+  vadj = gtk_scrollable_get_vadjustment (GTK_SCROLLABLE (parent));
+  return vadj != NULL ? (int) gtk_adjustment_get_page_size (vadj) : 0;
 }
 
 /* Fills an array of LayoutItem from the children in child order. */
@@ -83,11 +87,7 @@ desktop_layout_measure (GtkLayoutManager *manager G_GNUC_UNUSED,
       return;
     }
 
-  width = for_size;
-  if (width < 0)
-    width = gtk_widget_get_width (widget);
-  if (width <= 0)
-    width = pitch_w;
+  width = for_size > 0 ? for_size : pitch_w;
   height = viewport_height (widget);
   if (height <= 0)
     height = width * 3 / 4;
