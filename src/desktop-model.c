@@ -147,8 +147,18 @@ on_monitor_changed (GFileMonitor *monitor G_GNUC_UNUSED, GFile *file, GFile *oth
           }
         else if (is_hidden (name) || !find_index (self, name, &i))
           {
-            if ((item = add_item (self, other)) != NULL)
+            /* An existing item (e.g. a replaced file) just needs a reload. */
+            if ((item = add_item (self, other)) != NULL ||
+                (item = desktop_model_lookup (self, new_name)) != NULL)
               reload_item (item);
+          }
+        else if (find_index (self, new_name, NULL))
+          {
+            /* Renamed onto an existing item (replace via temp file): drop the
+               temporary entry and refresh the item that was replaced. */
+            g_list_store_remove (self->items, i);
+            position_store_remove (self->store, name);
+            reload_item (desktop_model_lookup (self, new_name));
           }
         else
           {

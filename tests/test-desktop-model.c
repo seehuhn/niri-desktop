@@ -249,7 +249,11 @@ test_rename_keeps_position (void)
 
   /* Renaming an item without position creates no store entry. */
   b = g_file_get_child (f.dir_file, "b.txt");
-  g_object_unref (g_file_set_display_name (b, "y.txt", NULL, NULL));
+  {
+    GFile *yf = g_file_set_display_name (b, "y.txt", NULL, NULL);
+    g_assert_nonnull (yf);
+    g_object_unref (yf);
+  }
   timed_out = FALSE;
   id = g_timeout_add_seconds (5, on_timeout, &timed_out);
   while (!desktop_model_lookup (f.model, "y.txt") && !timed_out)
@@ -296,6 +300,61 @@ test_change_reloads (void)
   if (!timed_out)
     g_source_remove (id);
   g_assert_cmpint (desktop_item_get_size (a), ==, 10);
+  fixture_teardown (&f);
+}
+
+static void
+wait_for_size (DesktopItem *item, goffset size)
+{
+  gboolean timed_out = FALSE;
+  guint id = g_timeout_add_seconds (5, on_timeout, &timed_out);
+
+  while (desktop_item_get_size (item) != size && !timed_out)
+    g_main_context_iteration (NULL, TRUE);
+  if (!timed_out)
+    g_source_remove (id);
+  g_assert_cmpint (desktop_item_get_size (item), ==, size);
+}
+
+static void
+test_overwrite_set_contents (void)
+{
+  Fixture f = { 0 };
+  const char *files[] = { "a.txt", NULL };
+  DesktopItem *a;
+
+  fixture_setup (&f, files, NULL);
+  load (f.model);
+  a = desktop_model_lookup (f.model, "a.txt");
+  touch (&f, "a.txt", "hello world");
+  wait_for_size (a, 11);
+  g_assert_cmpuint (g_list_model_get_n_items (desktop_model_get_items (f.model)), ==, 1);
+  g_assert_true (desktop_model_lookup (f.model, "a.txt") == a);
+  fixture_teardown (&f);
+}
+
+static void
+test_overwrite_replace (void)
+{
+  Fixture f = { 0 };
+  const char *files[] = { "a.txt", NULL };
+  DesktopItem *a;
+  g_autoptr (GFile) file = NULL;
+  g_autoptr (GFileOutputStream) out = NULL;
+  GError *error = NULL;
+
+  fixture_setup (&f, files, NULL);
+  load (f.model);
+  a = desktop_model_lookup (f.model, "a.txt");
+  file = g_file_get_child (f.dir_file, "a.txt");
+  out = g_file_replace (file, NULL, FALSE, G_FILE_CREATE_NONE, NULL, &error);
+  g_assert_no_error (error);
+  g_output_stream_write_all (G_OUTPUT_STREAM (out), "hello world", 11, NULL, NULL, &error);
+  g_assert_no_error (error);
+  g_output_stream_close (G_OUTPUT_STREAM (out), NULL, &error);
+  g_assert_no_error (error);
+  wait_for_size (a, 11);
+  g_assert_cmpuint (g_list_model_get_n_items (desktop_model_get_items (f.model)), ==, 1);
   fixture_teardown (&f);
 }
 
@@ -359,6 +418,8 @@ main (int argc, char **argv)
   g_test_add_func ("/model/delete-removes-and-forgets-position", test_delete_removes_and_forgets_position);
   g_test_add_func ("/model/rename-keeps-position", test_rename_keeps_position);
   g_test_add_func ("/model/change-reloads", test_change_reloads);
+  g_test_add_func ("/model/overwrite-set-contents", test_overwrite_set_contents);
+  g_test_add_func ("/model/overwrite-replace", test_overwrite_replace);
   g_test_add_func ("/model/creates-missing-directory", test_creates_missing_directory);
   g_test_add_func ("/model/preseed-position", test_preseed_position);
   return g_test_run ();
