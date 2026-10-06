@@ -150,7 +150,10 @@ update_selected (DesktopIcon *self)
   if (item_is_selected (self->item))
     gtk_widget_set_state_flags (GTK_WIDGET (self), GTK_STATE_FLAG_SELECTED, FALSE);
   else
-    gtk_widget_unset_state_flags (GTK_WIDGET (self), GTK_STATE_FLAG_SELECTED);
+    {
+      gtk_widget_unset_state_flags (GTK_WIDGET (self), GTK_STATE_FLAG_SELECTED);
+      cancel_rename_timeout (self);
+    }
 }
 
 static void
@@ -346,9 +349,10 @@ on_click_stopped (GtkGestureClick *gesture,
 {
   DesktopIcon *self = DESKTOP_ICON (user_data);
 
+  /* Do not cancel the rename timeout here: the gesture stops when its
+   * own double-click timer expires, which is no later than ours. */
   (void) gesture;
   self->rename_pending = FALSE;
-  cancel_rename_timeout (self);
 }
 
 /* ---- drag source ---- */
