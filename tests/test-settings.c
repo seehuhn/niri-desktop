@@ -43,7 +43,7 @@ static void
 test_pitch (void)
 {
   g_assert_cmpint (settings_pitch_width (64), ==, 80);
-  g_assert_cmpint (settings_pitch_height (64), ==, 96);
+  g_assert_cmpint (settings_pitch_height (64), ==, 112);
 }
 
 int

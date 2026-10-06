@@ -1,5 +1,6 @@
 #include "desktop-icon.h"
 
+#include "settings.h"
 #include "thumbnails.h"
 
 #include <string.h>
@@ -24,6 +25,7 @@ struct _DesktopIcon
   gpointer      drag_files_data;
 
   gboolean      rename_pending;  /* label press on a selected item */
+  guint         rename_timeout;  /* delayed rename after such a click */
   gboolean      drag_started;    /* drag-begin seen since the last press */
   gboolean      renaming;
 };
@@ -43,6 +45,12 @@ item_is_selected (DesktopItem *item)
 
   g_object_get (item, "selected", &selected, NULL);
   return selected;
+}
+
+static void
+cancel_rename_timeout (DesktopIcon *self)
+{
+  g_clear_handle_id (&self->rename_timeout, g_source_remove);
 }
 
 /* ---- thumbnails ---- */
@@ -104,6 +112,7 @@ static void
 on_unmap (GtkWidget *widget)
 {
   cancel_thumbnail (DESKTOP_ICON (widget));
+  cancel_rename_timeout (DESKTOP_ICON (widget));
 }
 
 /* ---- item binding ---- */
@@ -162,8 +171,6 @@ end_rename (DesktopIcon *self)
   if (!self->renaming)
     return;
   self->renaming = FALSE;
-  gtk_editable_set_width_chars (GTK_EDITABLE (self->entry), 1);
-  gtk_editable_set_max_width_chars (GTK_EDITABLE (self->entry), 1);
   gtk_widget_set_visible (self->entry, FALSE);
   gtk_widget_set_visible (self->label, TRUE);
 }
@@ -179,7 +186,7 @@ desktop_icon_start_rename (DesktopIcon *self)
 
   name = desktop_item_get_name (self->item);
   gtk_editable_set_text (GTK_EDITABLE (self->entry), name);
-  dot = strrchr (name, '.');
+  dot = desktop_item_is_directory (self->item) ? NULL : strrchr (name, '.');
   if (dot != NULL && dot != name)
     end = (int) g_utf8_pointer_to_offset (name, dot);
 
@@ -206,11 +213,13 @@ on_entry_activate (GtkEntry *entry,
     }
 
   new_name = g_strdup (text);
+  g_object_ref (self);
   g_signal_emit (self, signals[SIGNAL_RENAME_REQUESTED], 0, new_name, &handled);
   if (handled)
     end_rename (self);
   else if (self->renaming)
     gtk_widget_grab_focus (self->entry);
+  g_object_unref (self);
 }
 
 static gboolean
@@ -234,11 +243,29 @@ static void
 on_entry_focus_leave (GtkEventControllerFocus *controller,
                       gpointer                 user_data)
 {
+  DesktopIcon *self = DESKTOP_ICON (user_data);
+  GtkRoot *root = gtk_widget_get_root (GTK_WIDGET (self));
+
   (void) controller;
-  end_rename (DESKTOP_ICON (user_data));
+
+  /* Only cancel when focus moved elsewhere inside our window.  If the
+   * window itself lost focus (e.g. an error dialog after a failed
+   * rename), keep the entry open. */
+  if (GTK_IS_WINDOW (root) && gtk_window_is_active (GTK_WINDOW (root)))
+    end_rename (self);
 }
 
 /* ---- clicks ---- */
+
+static gboolean
+on_rename_timeout (gpointer user_data)
+{
+  DesktopIcon *self = DESKTOP_ICON (user_data);
+
+  self->rename_timeout = 0;
+  desktop_icon_start_rename (self);
+  return G_SOURCE_REMOVE;
+}
 
 static gboolean
 point_in_label (DesktopIcon *self,
@@ -267,11 +294,12 @@ on_click_pressed (GtkGestureClick *gesture,
   GdkModifierType state =
     gtk_event_controller_get_current_event_state (GTK_EVENT_CONTROLLER (gesture));
 
+  cancel_rename_timeout (self);
   self->drag_started = FALSE;
   self->rename_pending = FALSE;
 
   if (button == GDK_BUTTON_PRIMARY && n_press == 1
-      && (state & (GDK_CONTROL_MASK | GDK_SHIFT_MASK)) == 0
+      && (state & gtk_accelerator_get_default_mod_mask ()) == 0
       && !self->renaming
       && item_is_selected (self->item)
       && point_in_label (self, x, y))
@@ -300,15 +328,27 @@ on_click_released (GtkGestureClick *gesture,
 
   self->rename_pending = FALSE;
   if (start)
-    desktop_icon_start_rename (self);
+    {
+      /* Wait for the double-click time so that a double click on the
+       * label activates the item instead of starting a rename. */
+      int ms = 400;
+
+      g_object_get (gtk_widget_get_settings (GTK_WIDGET (self)),
+                    "gtk-double-click-time", &ms, NULL);
+      cancel_rename_timeout (self);
+      self->rename_timeout = g_timeout_add (ms, on_rename_timeout, self);
+    }
 }
 
 static void
 on_click_stopped (GtkGestureClick *gesture,
                   gpointer         user_data)
 {
+  DesktopIcon *self = DESKTOP_ICON (user_data);
+
   (void) gesture;
-  DESKTOP_ICON (user_data)->rename_pending = FALSE;
+  self->rename_pending = FALSE;
+  cancel_rename_timeout (self);
 }
 
 /* ---- drag source ---- */
@@ -362,6 +402,7 @@ on_drag_begin (GtkDragSource *source,
   (void) drag;
   self->drag_started = TRUE;
   self->rename_pending = FALSE;
+  cancel_rename_timeout (self);
 }
 
 /* ---- GObject ---- */
@@ -372,12 +413,16 @@ desktop_icon_dispose (GObject *object)
   DesktopIcon *self = DESKTOP_ICON (object);
 
   cancel_thumbnail (self);
+  cancel_rename_timeout (self);
   if (self->item != NULL)
     {
       g_signal_handlers_disconnect_by_data (self->item, self);
       g_clear_object (&self->item);
     }
   g_clear_pointer (&self->box, gtk_widget_unparent);
+  self->image = NULL;
+  self->label = NULL;
+  self->entry = NULL;
 
   G_OBJECT_CLASS (desktop_icon_parent_class)->dispose (object);
 }
@@ -427,7 +472,8 @@ desktop_icon_constructed (GObject *object)
 
   gtk_image_set_pixel_size (GTK_IMAGE (self->image), self->icon_size);
   gtk_widget_set_size_request (GTK_WIDGET (self),
-                               self->icon_size + 16, self->icon_size + 32);
+                               settings_pitch_width (self->icon_size),
+                               settings_pitch_height (self->icon_size));
 }
 
 static void
@@ -486,7 +532,8 @@ desktop_icon_init (DesktopIcon *self)
   gtk_label_set_lines (GTK_LABEL (self->label), 2);
   gtk_label_set_ellipsize (GTK_LABEL (self->label), PANGO_ELLIPSIZE_MIDDLE);
   gtk_label_set_justify (GTK_LABEL (self->label), GTK_JUSTIFY_CENTER);
-  gtk_label_set_max_width_chars (GTK_LABEL (self->label), 12);
+  /* Let the allocated width decide; wrap and ellipsize handle it. */
+  gtk_label_set_max_width_chars (GTK_LABEL (self->label), 1);
   gtk_widget_set_valign (self->label, GTK_ALIGN_START);
   gtk_box_append (GTK_BOX (self->box), self->label);
 

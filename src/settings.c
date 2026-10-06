@@ -44,5 +44,5 @@ settings_pitch_width (int icon_size)
 int
 settings_pitch_height (int icon_size)
 {
-  return icon_size + 32;
+  return icon_size + 48;
 }
