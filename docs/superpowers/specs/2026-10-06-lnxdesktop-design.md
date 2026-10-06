@@ -27,7 +27,8 @@ arrangement survives restarts and window resizes.
 - Free pixel placement of icons, persisted across restarts.
 - Sensible behaviour when the window changes size or moves between screens:
   stored positions are never changed by the app, only by the user.
-- Open on double-click or Enter, via the default handler.
+- Open on double-click or Enter in the default application for the file
+  type; "Open With…" to pick any other installed application.
 - Drag out to other apps; drop in from other apps (copy, or move when the drag
   action is move).
 - Copy and paste of files via the clipboard.
@@ -170,12 +171,15 @@ Name collisions get a " (2)"-style suffix.
 **Clipboard.** Copy puts a `GdkFileList` on the clipboard. Paste copies the
 clipboard's files into `~/Desktop/` like a drop with no position.
 
-**Open.** Double-click or Enter launches each selected file with
-`GtkFileLauncher`. Folders open in the default handler for
-`inode/directory`.
+**Open.** Double-click or Enter opens each selected file in the default
+application for its file type, as `xdg-open` would: a PDF in the PDF viewer,
+an image in the image viewer, and so on (implemented with `GtkFileLauncher`).
+Folders open in the default file manager.
 
 **Context menu.** Right-click or Menu key on an icon: Open, Open With…,
-Rename, Move to Trash, Copy, Info. On empty space: Paste (when the clipboard
+Rename, Move to Trash, Copy, Info. "Open With…" shows a chooser listing every
+installed application that handles the file's type and opens the file in the
+one picked (`GtkAppChooserDialog`). On empty space: Paste (when the clipboard
 holds files) and Select All.
 
 **Rename.** Clicking the name of an already-selected icon, or F2, swaps in a
