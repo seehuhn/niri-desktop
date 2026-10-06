@@ -27,15 +27,16 @@ cell_is_free (const LayoutItem *items, const gboolean *placed, guint n_items,
 }
 
 static Rect
-cell_rect (int viewport_width, int c, int r)
+cell_rect (int viewport_width, int pitch_w, int pitch_h, int c, int r)
 {
-  Rect cell = { MAX (0, viewport_width - (c + 1) * LAYOUT_PITCH_W),
-                r * LAYOUT_PITCH_H, LAYOUT_PITCH_W, LAYOUT_PITCH_H };
+  Rect cell = { MAX (0, viewport_width - (c + 1) * pitch_w),
+                r * pitch_h, pitch_w, pitch_h };
   return cell;
 }
 
 int
-layout_arrange (LayoutItem *items, guint n_items, int viewport_width, int viewport_height)
+layout_arrange (LayoutItem *items, guint n_items, int viewport_width, int viewport_height,
+                int pitch_w, int pitch_h)
 {
   g_autofree gboolean *placed = g_new0 (gboolean, MAX (n_items, 1));
 
@@ -55,8 +56,8 @@ layout_arrange (LayoutItem *items, guint n_items, int viewport_width, int viewpo
     }
 
   /* Pass 2: park the rest in free cells, scanning from the top right. */
-  int cols = MAX (1, viewport_width / LAYOUT_PITCH_W);
-  int rows = MAX (1, viewport_height / LAYOUT_PITCH_H);
+  int cols = MAX (1, viewport_width / pitch_w);
+  int rows = MAX (1, viewport_height / pitch_h);
 
   for (guint i = 0; i < n_items; i++)
     {
@@ -69,7 +70,7 @@ layout_arrange (LayoutItem *items, guint n_items, int viewport_width, int viewpo
       for (int c = 0; c < cols && !found; c++)
         for (int r = 0; r < rows && !found; r++)
           {
-            cell = cell_rect (viewport_width, c, r);
+            cell = cell_rect (viewport_width, pitch_w, pitch_h, c, r);
             found = cell_is_free (items, placed, n_items, &cell);
           }
 
@@ -78,7 +79,7 @@ layout_arrange (LayoutItem *items, guint n_items, int viewport_width, int viewpo
           rows++;
           for (int c = 0; c < cols && !found; c++)
             {
-              cell = cell_rect (viewport_width, c, rows - 1);
+              cell = cell_rect (viewport_width, pitch_w, pitch_h, c, rows - 1);
               found = cell_is_free (items, placed, n_items, &cell);
             }
         }

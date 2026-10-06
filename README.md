@@ -22,3 +22,14 @@ Example `~/.config/niri/config.kdl` entries:
     }
 
     spawn-at-startup "lnxdesktop"
+
+## Configuration
+
+Optional settings live in `~/.config/lnxdesktop/config.ini`:
+
+    [desktop]
+    icon-size=64
+
+`icon-size` is the picture size in logical pixels. The default is 64 and
+values are clamped to the range 32 to 128. The grid pitch follows from it
+(width + 16, height + 32). The file is read once at startup.
