@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Debian 13 packages only: `gtk4`, `gio-unix-2.0`, `gdk-pixbuf-2.0` via pkg-config. No libadwaita, no gnome-desktop.
-- All geometry in logical pixels. Grid pitch 112 × 128; picture 96 × 96; two-line label.
+- All geometry in logical pixels. Picture size from `settings_get_icon_size()` (key `icon-size`, group `[desktop]`, `~/.config/lnxdesktop/config.ini`; default 64; clamp 32–128). Pitch width = size + 16, height = size + 32. Two-line label. Window undecorated (no title bar).
 - App id `org.seehuhn.lnxdesktop`. Positions file `~/.config/lnxdesktop/positions.ini`.
 - Stored positions are only ever changed by a user drag, a drop, a rename (key moves) or a delete (key removed). The layout pass never writes.
 - Every GIO failure that the user triggered shows a `GtkAlertDialog` with the GError message.
@@ -264,6 +264,32 @@
 
 ---
 
+### Task 7b: Settings and parameterised pitch
+
+**Files:**
+- Create: `src/settings.h`, `src/settings.c`
+- Modify: `src/layout.h`, `src/layout.c`, `tests/test-layout.c`, `README.md`
+- Test: `tests/test-settings.c`
+
+**Interfaces:**
+- Produces:
+  ```c
+  int settings_get_icon_size (void);                 /* reads config.ini once, cached; default 64, clamped 32..128 */
+  int settings_pitch_width (int icon_size);          /* icon_size + 16 */
+  int settings_pitch_height (int icon_size);         /* icon_size + 32 */
+  int settings_load_icon_size_from (const char *path); /* testable core: reads one file, returns default/clamped */
+  ```
+  `layout_arrange` gains two parameters: `int layout_arrange (LayoutItem *items, guint n_items, int viewport_width, int viewport_height, int pitch_w, int pitch_h);` and the `LAYOUT_PITCH_*` macros are removed. Existing layout tests pass 112, 128 and keep their expected values.
+
+- [ ] **Step 1: Write the failing tests** — `tests/test-settings.c`: `/settings/missing-file-default` → 64; `/settings/reads-value` (file with `[desktop]\nicon-size=48`) → 48; `/settings/clamps` (`icon-size=500` → 128, `icon-size=4` → 32, `icon-size=abc` → 64); `/settings/pitch` (64 → 80, 96).
+- [ ] **Step 2: Run** — Expected: compile failure.
+- [ ] **Step 3: Implement** `settings.c`; parameterise `layout.c`; update `test-layout.c` call sites.
+- [ ] **Step 4: Run** `meson test -C build` — Expected: all OK.
+- [ ] **Step 5: Document** the config key in `README.md`.
+- [ ] **Step 6: Commit** — `git commit -m "Add settings with configurable icon size"`.
+
+---
+
 ### Task 8: Canvas with layout manager
 
 **Files:**
@@ -286,8 +312,8 @@
   void          desktop_canvas_clear_selection (DesktopCanvas *self);
   DesktopIcon  *desktop_canvas_icon_for_item (DesktopCanvas *self, DesktopItem *item);
   ```
-  `DesktopLayout::measure`: horizontal → min 0, nat 0 (fill parent); vertical → content height from a trial `layout_arrange` using the parent `GtkViewport`'s current height (or `for_size * 3 / 4` when the parent has no height yet). `DesktopLayout::allocate`: build the `LayoutItem` array from children in child order (the model's sorted order; the canvas inserts icons in model order), call `layout_arrange (items, n, width, viewport_height)`, `gtk_widget_size_allocate` each child at `(out_x, out_y, 112, 128)`.
-  Canvas: `vexpand`, `hexpand`, `focusable`, CSS class `desktop-canvas`; connects to `items-changed` on `desktop_model_get_items` and keeps `GHashTable item → icon`, inserting icons at the matching child position with `gtk_widget_insert_before`. Any `notify::position` on an item calls `gtk_widget_queue_allocate`. `main.c` builds: model from `g_get_user_special_dir (G_USER_DIRECTORY_DESKTOP)` (fallback `~/Desktop`) with a store at `g_get_user_config_dir()/lnxdesktop/positions.ini`, a `GtkScrolledWindow` (hscroll NEVER, vscroll AUTOMATIC) containing the canvas, `desktop_model_load_async` started after the window is presented. If `desktop_model_is_monitoring` is FALSE, a `GtkLabel` "External changes to the Desktop folder are not tracked." with CSS class `warning` is packed above the scrolled window.
+  `DesktopLayout::measure`: horizontal → min 0, nat 0 (fill parent); vertical → content height from a trial `layout_arrange` using the parent `GtkViewport`'s current height (or `for_size * 3 / 4` when the parent has no height yet). `DesktopLayout::allocate`: build the `LayoutItem` array from children in child order (the model's sorted order; the canvas inserts icons in model order), call `layout_arrange (items, n, width, viewport_height, pitch_w, pitch_h)` with pitches from `settings_*` of `settings_get_icon_size ()`, `gtk_widget_size_allocate` each child at `(out_x, out_y, pitch_w, pitch_h)`.
+  Canvas: `vexpand`, `hexpand`, `focusable`, CSS class `desktop-canvas`; connects to `items-changed` on `desktop_model_get_items` and keeps `GHashTable item → icon`, inserting icons at the matching child position with `gtk_widget_insert_before`. Any `notify::position` on an item calls `gtk_widget_queue_allocate`. `main.c` builds: model from `g_get_user_special_dir (G_USER_DIRECTORY_DESKTOP)` (fallback `~/Desktop`) with a store at `g_get_user_config_dir()/lnxdesktop/positions.ini`, a `GtkScrolledWindow` (hscroll NEVER, vscroll AUTOMATIC) containing the canvas, `gtk_window_set_decorated (window, FALSE)`, `desktop_model_load_async` started after the window is presented. If `desktop_model_is_monitoring` is FALSE, a `GtkLabel` "External changes to the Desktop folder are not tracked." with CSS class `warning` is packed above the scrolled window.
 
 - [ ] **Step 1: Write `desktop-layout.c` and `desktop-canvas.c`** per the above; wire `main.c`.
 - [ ] **Step 2: Verify manually** — put six files in `~/Desktop/`, run; icons fill from the top right downward. Resize the window narrower than the arrangement and back; nothing in `positions.ini` changes (the file should not exist yet).
@@ -374,7 +400,7 @@
 - Consumes: `desktop_icon_set_drag_files_func`, `drag-prepared` (Task 7); `actions_import` (Task 10); `desktop_model_set_position` (Task 5).
 
 - [ ] **Step 1: Drag out** — the canvas sets each icon's drag-files func to return `desktop_canvas_get_selected_files` (selecting the dragged icon first if it was not selected). On `drag-prepared (x, y)` the canvas records `hot = (x, y)`, the dragged item, and for every selected item its offset from the dragged icon's allocation origin.
-- [ ] **Step 2: Drop target** — `GtkDropTarget` on the canvas for `GDK_TYPE_FILE_LIST`, actions COPY | MOVE. In `drop`: if `gdk_drop_get_drag (drop) != NULL` and the recorded drag is set (local move): for each recorded item `desktop_model_set_position (model, item, x - hot.x + dx, y - hot.y + dy)` clamped to ≥ 0; return TRUE. Otherwise `actions_import (window, model, files, action == MOVE, TRUE, x - 48, y - 56)` (centre the first icon on the pointer). Clear the recorded drag on `drag-end`.
+- [ ] **Step 2: Drop target** — `GtkDropTarget` on the canvas for `GDK_TYPE_FILE_LIST`, actions COPY | MOVE. In `drop`: if `gdk_drop_get_drag (drop) != NULL` and the recorded drag is set (local move): for each recorded item `desktop_model_set_position (model, item, x - hot.x + dx, y - hot.y + dy)` clamped to ≥ 0; return TRUE. Otherwise `actions_import (window, model, files, action == MOVE, TRUE, x - pitch_w / 2, y - pitch_h / 2)` (centre the first icon on the pointer). Clear the recorded drag on `drag-end`.
 - [ ] **Step 3: Verify manually** — move an icon, restart the app, it is where it was dropped and `positions.ini` holds it; move a multi-selection, offsets preserved; drag a file to a text editor in another niri column; drop a file from a file manager onto the window; toggle niri column width full → half → full, every icon returns.
 - [ ] **Step 4: Commit** — `git commit -m "Add drag and drop and persistent moves"`.
 

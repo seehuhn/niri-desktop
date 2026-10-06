@@ -115,8 +115,13 @@ thumbnails in `~/.cache/thumbnails/` (large size, 256 px) using GdkPixbuf,
 asynchronously; falls back to the theme icon for the content type. Requests
 are served in order of visibility.
 
+**`settings.c`** — reads `~/.config/lnxdesktop/config.ini` (`GKeyFile`):
+`settings_get_icon_size()` with default and clamping as above, and the pitch
+helpers derived from it.
+
 **`main.c`** — `GtkApplication` with app-id `org.seehuhn.lnxdesktop`, one
-window, loads `style.css` from GResource.
+undecorated window (niri draws the border; there is no title bar), loads
+`style.css` from GResource.
 
 ## Layout
 
@@ -146,8 +151,10 @@ being parked on every pass until dragged, so new files always land in the
 first gap at the top right and the positions file holds only deliberate
 placements.
 
-Grid pitch is 112 × 128 logical pixels; the picture is 96 × 96 with a two-line
-label below.
+The picture size is configurable: key `icon-size` in group `[desktop]` of
+`~/.config/lnxdesktop/config.ini`, default 64, clamped to 32–128 logical
+pixels. Grid pitch is derived: width = size + 16, height = size + 32 (so
+80 × 96 at the default). A two-line label sits below the picture.
 
 ## Interaction
 
@@ -219,7 +226,7 @@ only to `items-changed`. A changed file reloads info and thumbnail.
 
 ## Appearance
 
-Background uses the theme's view colour. Selected icons get a rounded
+The window has no title bar. Background uses the theme's view colour. Selected icons get a rounded
 translucent highlight behind picture and label. All styling is in
 `style.css`, compiled into the binary as a GResource. Thumbnails are
 requested at 256 px and scaled down so they are crisp on the 2× panel.
