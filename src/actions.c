@@ -2,11 +2,23 @@
 #include "settings.h"
 #include <string.h>
 
-char *
-actions_unique_name (GFile *dir, const char *name)
+/* A dangling symlink counts as existing: only NOT_FOUND means free. */
+static gboolean
+name_taken (GFile *dir, const char *name, GHashTable *reserved)
 {
-  g_autoptr (GFile) first = g_file_get_child (dir, name);
-  if (!g_file_query_exists (first, NULL))
+  if (reserved != NULL && g_hash_table_contains (reserved, name))
+    return TRUE;
+  g_autoptr (GFile) f = g_file_get_child (dir, name);
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GFileInfo) info = g_file_query_info (f, G_FILE_ATTRIBUTE_STANDARD_NAME,
+                                                  G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS, NULL, &error);
+  return info != NULL || !g_error_matches (error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND);
+}
+
+char *
+actions_unique_name_with_reserved (GFile *dir, const char *name, GHashTable *reserved)
+{
+  if (!name_taken (dir, name, reserved))
     return g_strdup (name);
 
   const char *dot = strrchr (name, '.');
@@ -16,10 +28,15 @@ actions_unique_name (GFile *dir, const char *name)
   for (int n = 2;; n++)
     {
       g_autofree char *candidate = g_strdup_printf ("%.*s (%d)%s", (int) stem_len, name, n, ext);
-      g_autoptr (GFile) f = g_file_get_child (dir, candidate);
-      if (!g_file_query_exists (f, NULL))
+      if (!name_taken (dir, candidate, reserved))
         return g_steal_pointer (&candidate);
     }
+}
+
+char *
+actions_unique_name (GFile *dir, const char *name)
+{
+  return actions_unique_name_with_reserved (dir, name, NULL);
 }
 
 void
@@ -224,6 +241,7 @@ actions_import (GtkWindow *parent, DesktopModel *model, GList *files,
   GFile *dir = desktop_model_get_directory (model);
   int pitch_h = settings_pitch_height (settings_get_icon_size ());
   int k = 0;
+  g_autoptr (GHashTable) reserved = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
 
   for (GList *l = files; l; l = l->next, k++)
     {
@@ -231,20 +249,24 @@ actions_import (GtkWindow *parent, DesktopModel *model, GList *files,
       int yk = y + k * pitch_h;
       g_autoptr (GFile) src_parent = g_file_get_parent (src);
 
-      if (src_parent != NULL && g_file_equal (src_parent, dir))
+      gboolean same_dir = src_parent != NULL && g_file_equal (src_parent, dir);
+
+      if (same_dir && has_point)
         {
-          if (has_point)
-            {
-              g_autofree char *base = g_file_get_basename (src);
-              DesktopItem *item = desktop_model_lookup (model, base);
-              if (item != NULL)
-                desktop_model_set_position (model, item, x, yk);
-            }
+          g_autofree char *name = g_file_get_basename (src);
+          DesktopItem *item = desktop_model_lookup (model, name);
+          if (item != NULL)
+            desktop_model_set_position (model, item, x, yk);
           continue;
         }
+      /* Moving a file onto its own directory without a target is a no-op;
+         a copy falls through and creates a uniquely named duplicate. */
+      if (same_dir && move)
+        continue;
 
       g_autofree char *base = g_file_get_basename (src);
-      g_autofree char *unique = actions_unique_name (dir, base);
+      g_autofree char *unique = actions_unique_name_with_reserved (dir, base, reserved);
+      g_hash_table_add (reserved, g_strdup (unique));
       g_autoptr (GFile) dest = g_file_get_child (dir, unique);
       if (has_point)
         desktop_model_preseed_position (model, unique, x, yk);

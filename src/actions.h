@@ -8,6 +8,8 @@ G_BEGIN_DECLS
 
 /* "a.txt" -> "a.txt" if free, else "a (2).txt", "a (3).txt", ...; "Makefile" -> "Makefile (2)". */
 char    *actions_unique_name (GFile *dir, const char *name);
+/* As above, also avoiding names in `reserved` (a set of strings; may be NULL). */
+char    *actions_unique_name_with_reserved (GFile *dir, const char *name, GHashTable *reserved);
 void     actions_report_error (GtkWindow *parent, GError *error);
 void     actions_open (GtkWindow *parent, GList *files);
 void     actions_open_with (GtkWindow *parent, GFile *file);

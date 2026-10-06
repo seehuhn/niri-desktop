@@ -79,6 +79,20 @@ test_dotfile (void)
   check (e, ".bashrc", ".bashrc (2)");
 }
 
+static void
+test_reserved (void)
+{
+  g_autoptr (GFile) dir = make_dir ();
+  g_autoptr (GHashTable) reserved = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+  g_autofree char *first = actions_unique_name_with_reserved (dir, "a.txt", reserved);
+  g_assert_cmpstr (first, ==, "a.txt");
+  g_hash_table_add (reserved, g_strdup (first));
+  g_autofree char *second = actions_unique_name_with_reserved (dir, "a.txt", reserved);
+  g_assert_cmpstr (second, ==, "a (2).txt");
+  const char *none[] = { NULL };
+  cleanup (dir, none);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -88,5 +102,6 @@ main (int argc, char **argv)
   g_test_add_func ("/actions/unique-name-no-extension", test_no_extension);
   g_test_add_func ("/actions/unique-name-single-extension", test_single_extension);
   g_test_add_func ("/actions/unique-name-dotfile", test_dotfile);
+  g_test_add_func ("/actions/unique-name-reserved", test_reserved);
   return g_test_run ();
 }
