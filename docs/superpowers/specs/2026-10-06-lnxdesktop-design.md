@@ -5,8 +5,9 @@ Date: 2026-10-06
 ## Purpose
 
 lnxDesktop shows the files in `~/Desktop/` as freely arranged icons, the way
-the macOS desktop does, without any of the application-launching parts. It
-exists because niri (a scrollable-tiling Wayland compositor) draws no desktop,
+the macOS desktop does. Only the file icons are replicated: there is no Dock,
+menu bar or app launcher, and applications run as separate niri windows, not
+inside this program. It exists because niri (a scrollable-tiling Wayland compositor) draws no desktop,
 so there is nowhere to put files and drag them from. The app runs as an
 ordinary niri window in its own column; other apps run in neighbouring
 columns.
