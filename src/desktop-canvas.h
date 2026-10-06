@@ -15,4 +15,11 @@ DesktopModel *desktop_canvas_get_model      (DesktopCanvas *self);
 /* transfer none, or NULL */
 DesktopIcon  *desktop_canvas_icon_for_item  (DesktopCanvas *self, DesktopItem *item);
 
+/* Selected items in model order: transfer container, DesktopItem* */
+GList        *desktop_canvas_get_selected_items (DesktopCanvas *self);
+/* Selected files in model order: transfer container, GFile* (unowned) */
+GList        *desktop_canvas_get_selected_files (DesktopCanvas *self);
+void          desktop_canvas_select_all         (DesktopCanvas *self);
+void          desktop_canvas_clear_selection    (DesktopCanvas *self);
+
 G_END_DECLS
