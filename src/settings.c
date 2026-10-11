@@ -73,11 +73,12 @@ settings_save_background_to (const char *config_path,
   g_autofree char *dir = g_path_get_dirname (config_path);
 
   /* Only a missing file is fine; never overwrite one we cannot parse. */
-  if (!g_key_file_load_from_file (kf, config_path, G_KEY_FILE_KEEP_COMMENTS, error))
+  g_autoptr (GError) load_error = NULL;
+  if (!g_key_file_load_from_file (kf, config_path, G_KEY_FILE_KEEP_COMMENTS, &load_error)
+      && !g_error_matches (load_error, G_FILE_ERROR, G_FILE_ERROR_NOENT))
     {
-      if (!g_error_matches (*error, G_FILE_ERROR, G_FILE_ERROR_NOENT))
-        return FALSE;
-      g_clear_error (error);
+      g_propagate_error (error, g_steal_pointer (&load_error));
+      return FALSE;
     }
 
   if (path_or_null != NULL)
