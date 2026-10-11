@@ -1,9 +1,11 @@
 #include <gtk/gtk.h>
 
 #include "actions.h"
+#include "desktop-background.h"
 #include "desktop-canvas.h"
 #include "desktop-model.h"
 #include "position-store.h"
+#include "settings.h"
 
 static void
 load_css (void)
@@ -43,11 +45,15 @@ typedef struct
   GtkWindow     *window;  /* unowned */
   DesktopCanvas *canvas;  /* unowned */
   DesktopModel  *model;
+  DesktopBackground *background;  /* unowned */
+  GCancellable  *load_cancellable;  /* pending background load */
 } App;
 
 static void
 app_free (App *app)
 {
+  g_cancellable_cancel (app->load_cancellable);
+  g_clear_object (&app->load_cancellable);
   g_clear_object (&app->model);
   g_free (app);
 }
@@ -173,7 +179,157 @@ action_select_all (GSimpleAction *action G_GNUC_UNUSED,
   desktop_canvas_select_all (app->canvas);
 }
 
+/* ---- background ---- */
+
+static void
+apply_texture (App        *app,
+               GdkTexture *texture)
+{
+  desktop_background_set_texture (app->background, texture);
+  if (texture != NULL)
+    gtk_widget_add_css_class (GTK_WIDGET (app->window), "has-background");
+  else
+    gtk_widget_remove_css_class (GTK_WIDGET (app->window), "has-background");
+}
+
+/* Starts a load, superseding any pending one.  `path` is persisted when
+ * `user_choice`; failures are only shown for user choices. */
+typedef struct
+{
+  App      *app;  /* valid while the cancellable is not cancelled */
+  char     *path;
+  gboolean  user_choice;
+} LoadData;
+
+static void
+load_data_free (LoadData *data)
+{
+  g_free (data->path);
+  g_free (data);
+}
+
+static void
+on_background_loaded (GObject      *source G_GNUC_UNUSED,
+                      GAsyncResult *res,
+                      gpointer      user_data)
+{
+  LoadData *data = user_data;
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GdkTexture) texture = desktop_background_load_finish (res, &error);
+
+  if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+    {
+      /* The window is going away or a newer load took over. */
+      load_data_free (data);
+      return;
+    }
+
+  if (texture == NULL)
+    {
+      if (data->user_choice)
+        actions_report_error (data->app->window, error);
+      else
+        g_warning ("Cannot load background %s: %s", data->path, error->message);
+    }
+  else
+    {
+      apply_texture (data->app, texture);
+      if (data->user_choice)
+        {
+          g_autoptr (GError) save_error = NULL;
+
+          if (!settings_set_background (data->path, &save_error))
+            actions_report_error (data->app->window, save_error);
+        }
+    }
+  load_data_free (data);
+}
+
+static void
+start_background_load (App        *app,
+                       const char *path,
+                       gboolean    user_choice)
+{
+  LoadData *data = g_new0 (LoadData, 1);
+
+  g_cancellable_cancel (app->load_cancellable);
+  g_clear_object (&app->load_cancellable);
+  app->load_cancellable = g_cancellable_new ();
+  data->app = app;
+  data->path = g_strdup (path);
+  data->user_choice = user_choice;
+  desktop_background_load_async (path, app->load_cancellable, on_background_loaded, data);
+}
+
+static void
+on_background_chosen (GObject      *source,
+                      GAsyncResult *res,
+                      gpointer      user_data)
+{
+  App *app = user_data;
+  g_autoptr (GFile) file = gtk_file_dialog_open_finish (GTK_FILE_DIALOG (source), res, NULL);
+  g_autofree char *path = file != NULL ? g_file_get_path (file) : NULL;
+
+  /* Dismissed or not a local file: nothing to do. */
+  if (path != NULL)
+    start_background_load (app, path, TRUE);
+}
+
+static void
+action_change_background (GSimpleAction *action G_GNUC_UNUSED,
+                          GVariant      *parameter G_GNUC_UNUSED,
+                          gpointer       user_data)
+{
+  App *app = user_data;
+  g_autoptr (GtkFileDialog) dialog = gtk_file_dialog_new ();
+  g_autoptr (GtkFileFilter) filter = gtk_file_filter_new ();
+  g_autoptr (GListStore) filters = g_list_store_new (GTK_TYPE_FILE_FILTER);
+  g_autofree char *current = settings_get_background ();
+  const char *pictures = g_get_user_special_dir (G_USER_DIRECTORY_PICTURES);
+
+  gtk_file_dialog_set_title (dialog, "Choose Background Image");
+  gtk_file_dialog_set_modal (dialog, TRUE);
+  gtk_file_filter_set_name (filter, "Images");
+  gtk_file_filter_add_pixbuf_formats (filter);
+  g_list_store_append (filters, filter);
+  gtk_file_dialog_set_filters (dialog, G_LIST_MODEL (filters));
+  gtk_file_dialog_set_default_filter (dialog, filter);
+
+  if (current != NULL)
+    {
+      g_autoptr (GFile) file = g_file_new_for_path (current);
+      g_autoptr (GFile) parent = g_file_get_parent (file);
+
+      if (parent != NULL && g_file_query_exists (parent, NULL))
+        gtk_file_dialog_set_initial_folder (dialog, parent);
+    }
+  else if (pictures != NULL && g_file_test (pictures, G_FILE_TEST_IS_DIR))
+    {
+      g_autoptr (GFile) folder = g_file_new_for_path (pictures);
+
+      gtk_file_dialog_set_initial_folder (dialog, folder);
+    }
+
+  gtk_file_dialog_open (dialog, app->window, NULL, on_background_chosen, app);
+}
+
+static void
+action_remove_background (GSimpleAction *action G_GNUC_UNUSED,
+                          GVariant      *parameter G_GNUC_UNUSED,
+                          gpointer       user_data)
+{
+  App *app = user_data;
+  g_autoptr (GError) error = NULL;
+
+  g_cancellable_cancel (app->load_cancellable);
+  apply_texture (app, NULL);
+  if (!settings_set_background (NULL, &error))
+    actions_report_error (app->window, error);
+}
+
 static const GActionEntry win_actions[] = {
+  { .name = "change-background", .activate = action_change_background },
+  { .name = "remove-background", .activate = action_remove_background },
   { .name = "open", .activate = action_open },
   { .name = "open-with", .activate = action_open_with },
   { .name = "rename", .activate = action_rename },
@@ -316,6 +472,11 @@ on_context_menu_requested (DesktopCanvas *canvas,
                                              GDK_TYPE_FILE_LIST))
         append_section (menu, "Paste", "win.paste", "<Control>v", NULL);
       append_section (menu, "Select All", "win.select-all", "<Control>a", NULL);
+      if (desktop_background_has_texture (app->background))
+        append_section (menu, "Change Background…", "win.change-background", NULL,
+                        "Remove Background", "win.remove-background", NULL, NULL);
+      else
+        append_section (menu, "Change Background…", "win.change-background", NULL, NULL);
     }
 
   popover = gtk_popover_menu_new_from_model (G_MENU_MODEL (menu));
@@ -343,7 +504,8 @@ on_activate (GApplication *app)
   g_autoptr (DesktopModel) model = NULL;
   App *state;
   GtkWindow *existing = gtk_application_get_active_window (GTK_APPLICATION (app));
-  GtkWidget *window, *box, *scrolled, *canvas;
+  GtkWidget *window, *overlay, *background, *box, *scrolled, *canvas;
+  g_autofree char *saved_background = NULL;
 
   if (existing != NULL)
     {
@@ -372,16 +534,22 @@ on_activate (GApplication *app)
   scrolled = gtk_scrolled_window_new ();
   gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scrolled),
                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_widget_add_css_class (scrolled, "desktop-scroll");
   gtk_widget_set_vexpand (scrolled, TRUE);
   canvas = desktop_canvas_new (model);
   gtk_scrolled_window_set_child (GTK_SCROLLED_WINDOW (scrolled), canvas);
   gtk_box_append (GTK_BOX (box), scrolled);
-  gtk_window_set_child (GTK_WINDOW (window), box);
+  background = desktop_background_new ();
+  overlay = gtk_overlay_new ();
+  gtk_overlay_set_child (GTK_OVERLAY (overlay), background);
+  gtk_overlay_add_overlay (GTK_OVERLAY (overlay), box);
+  gtk_window_set_child (GTK_WINDOW (window), overlay);
 
   state = g_new0 (App, 1);
   state->window = GTK_WINDOW (window);
   state->canvas = DESKTOP_CANVAS (canvas);
   state->model = g_object_ref (model);
+  state->background = DESKTOP_BACKGROUND (background);
   g_object_set_data_full (G_OBJECT (window), "lnxdesktop-app", state, (GDestroyNotify) app_free);
   g_action_map_add_action_entries (G_ACTION_MAP (window), win_actions,
                                    G_N_ELEMENTS (win_actions), state);
@@ -391,6 +559,10 @@ on_activate (GApplication *app)
   g_signal_connect (canvas, "activate-selection", G_CALLBACK (on_activate_selection), state);
   g_signal_connect (canvas, "context-menu-requested",
                     G_CALLBACK (on_context_menu_requested), state);
+
+  saved_background = settings_get_background ();
+  if (saved_background != NULL)
+    start_background_load (state, saved_background, FALSE);
 
   gtk_window_present (GTK_WINDOW (window));
   desktop_model_load_async (model, NULL, on_load_finished, g_object_ref (window));

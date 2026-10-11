@@ -1,3 +1,4 @@
+#include <string.h>
 #include <glib.h>
 #include <glib/gstdio.h>
 #include "settings.h"
@@ -47,6 +48,95 @@ test_pitch (void)
   g_assert_cmpint (settings_pitch_height (64), ==, 112);
 }
 
+static char *
+make_tmp_dir (void)
+{
+  g_autoptr (GError) err = NULL;
+  char *dir = g_dir_make_tmp ("lnxdesktop-settings-XXXXXX", &err);
+  g_assert_no_error (err);
+  return dir;
+}
+
+static void
+test_background_missing (void)
+{
+  g_autofree char *bg = settings_load_background_from ("/nonexistent/lnxdesktop/config.ini");
+  g_assert_null (bg);
+}
+
+static void
+test_background_round_trip (void)
+{
+  g_autoptr (GError) err = NULL;
+  g_autofree char *dir = make_tmp_dir ();
+  g_autofree char *path = g_build_filename (dir, "config.ini", NULL);
+
+  g_assert_true (settings_save_background_to (path, "/pics/a b.jpg", &err));
+  g_assert_no_error (err);
+  g_autofree char *bg = settings_load_background_from (path);
+  g_assert_cmpstr (bg, ==, "/pics/a b.jpg");
+  g_remove (path);
+  g_rmdir (dir);
+}
+
+static void
+test_background_keeps_other_keys (void)
+{
+  g_autoptr (GError) err = NULL;
+  g_autofree char *dir = make_tmp_dir ();
+  g_autofree char *path = g_build_filename (dir, "config.ini", NULL);
+
+  g_file_set_contents (path, "# my comment\n[desktop]\nicon-size=48\n", -1, &err);
+  g_assert_no_error (err);
+  g_assert_true (settings_save_background_to (path, "/x.png", &err));
+  g_assert_no_error (err);
+  g_assert_cmpint (settings_load_icon_size_from (path), ==, 48);
+  g_autofree char *bg = settings_load_background_from (path);
+  g_assert_cmpstr (bg, ==, "/x.png");
+  g_autofree char *contents = NULL;
+  g_assert_true (g_file_get_contents (path, &contents, NULL, &err));
+  g_assert_nonnull (strstr (contents, "# my comment"));
+  g_remove (path);
+  g_rmdir (dir);
+}
+
+static void
+test_background_remove (void)
+{
+  g_autoptr (GError) err = NULL;
+  g_autofree char *dir = make_tmp_dir ();
+  g_autofree char *path = g_build_filename (dir, "config.ini", NULL);
+
+  g_file_set_contents (path, "[desktop]\nicon-size=48\nbackground=/x.png\n", -1, &err);
+  g_assert_no_error (err);
+  g_assert_true (settings_save_background_to (path, NULL, &err));
+  g_assert_no_error (err);
+  g_autofree char *bg = settings_load_background_from (path);
+  g_assert_null (bg);
+  g_assert_cmpint (settings_load_icon_size_from (path), ==, 48);
+  g_remove (path);
+  g_rmdir (dir);
+}
+
+static void
+test_background_creates_dir (void)
+{
+  g_autoptr (GError) err = NULL;
+  g_autofree char *dir = make_tmp_dir ();
+  g_autofree char *sub = g_build_filename (dir, "sub", "lnxdesktop", NULL);
+  g_autofree char *path = g_build_filename (sub, "config.ini", NULL);
+  g_autofree char *sub1 = g_build_filename (dir, "sub", NULL);
+
+  g_assert_true (settings_save_background_to (path, "/y.png", &err));
+  g_assert_no_error (err);
+  g_autofree char *bg = settings_load_background_from (path);
+  g_assert_cmpstr (bg, ==, "/y.png");
+  g_remove (path);
+  g_rmdir (sub);
+  g_rmdir (sub1);
+  g_rmdir (dir);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -55,5 +145,10 @@ main (int argc, char **argv)
   g_test_add_func ("/settings/reads-value", test_reads_value);
   g_test_add_func ("/settings/clamps", test_clamps);
   g_test_add_func ("/settings/pitch", test_pitch);
+  g_test_add_func ("/settings/background-missing", test_background_missing);
+  g_test_add_func ("/settings/background-round-trip", test_background_round_trip);
+  g_test_add_func ("/settings/background-keeps-other-keys", test_background_keeps_other_keys);
+  g_test_add_func ("/settings/background-remove", test_background_remove);
+  g_test_add_func ("/settings/background-creates-dir", test_background_creates_dir);
   return g_test_run ();
 }

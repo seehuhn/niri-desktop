@@ -19,3 +19,8 @@ int layout_arrange (LayoutItem *items, guint n_items, int viewport_width, int vi
  * is smaller than the group, that coordinate is pinned to 0. */
 void layout_clamp_group (int *x, int *y, int group_w, int group_h,
                          int viewport_w, int viewport_h);
+
+/* "Cover" placement: scales an iw x ih image proportionally until it covers
+ * a w x h area, centred.  Returns the drawn rectangle (x, y may be negative). */
+void layout_cover_rect (double w, double h, double iw, double ih,
+                        double *x, double *y, double *dw, double *dh);

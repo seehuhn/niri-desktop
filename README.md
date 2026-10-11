@@ -29,10 +29,20 @@ Optional settings live in `~/.config/lnxdesktop/config.ini`:
 
     [desktop]
     icon-size=64
+    background=/home/you/Pictures/photo.jpg
 
 `icon-size` is the picture size in logical pixels. The default is 64 and
 values are clamped to the range 32 to 128. The grid pitch follows from it
 (width + 16, height + 48). The file is read once at startup.
+
+`background` is the path of an image shown behind the icons. It is scaled
+proportionally until it covers the whole window and centred, so the edges
+are cropped. Normally you set it from the program: right-click empty space
+and choose "Change Background…"; "Remove Background" (shown while an image is
+set) deletes the key. The choice is saved in `config.ini`, other keys and
+comments are kept. Very large images are downscaled to at most 3840 pixels
+on load. If the file cannot be loaded at startup a warning is logged and the
+plain background is used.
 
 For development, the environment variable `LNXDESKTOP_DIR` replaces the Desktop directory.
 

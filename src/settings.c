@@ -1,5 +1,8 @@
 #include "settings.h"
 
+#include <errno.h>
+#include <glib/gstdio.h>
+
 #define ICON_SIZE_DEFAULT 64
 #define ICON_SIZE_MIN 32
 #define ICON_SIZE_MAX 128
@@ -45,4 +48,68 @@ int
 settings_pitch_height (int icon_size)
 {
   return icon_size + 48;
+}
+
+char *
+settings_load_background_from (const char *config_path)
+{
+  g_autoptr (GKeyFile) kf = g_key_file_new ();
+  char *value;
+
+  if (!g_key_file_load_from_file (kf, config_path, G_KEY_FILE_NONE, NULL))
+    return NULL;
+  value = g_key_file_get_string (kf, "desktop", "background", NULL);
+  if (value != NULL && *value == '\0')
+    g_clear_pointer (&value, g_free);
+  return value;
+}
+
+gboolean
+settings_save_background_to (const char *config_path,
+                             const char *path_or_null,
+                             GError    **error)
+{
+  g_autoptr (GKeyFile) kf = g_key_file_new ();
+  g_autofree char *dir = g_path_get_dirname (config_path);
+  g_autoptr (GError) load_err = NULL;
+
+  /* A missing file is fine; an unparsable one is replaced. */
+  g_key_file_load_from_file (kf, config_path, G_KEY_FILE_KEEP_COMMENTS, &load_err);
+
+  if (path_or_null != NULL)
+    g_key_file_set_string (kf, "desktop", "background", path_or_null);
+  else
+    g_key_file_remove_key (kf, "desktop", "background", NULL);
+
+  if (g_mkdir_with_parents (dir, 0700) != 0)
+    {
+      int e = errno;
+      g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (e),
+                   "Cannot create %s: %s", dir, g_strerror (e));
+      return FALSE;
+    }
+  return g_key_file_save_to_file (kf, config_path, error);
+}
+
+static char *
+config_path (void)
+{
+  return g_build_filename (g_get_user_config_dir (), "lnxdesktop", "config.ini", NULL);
+}
+
+char *
+settings_get_background (void)
+{
+  g_autofree char *path = config_path ();
+
+  return settings_load_background_from (path);
+}
+
+gboolean
+settings_set_background (const char *path_or_null,
+                         GError    **error)
+{
+  g_autofree char *path = config_path ();
+
+  return settings_save_background_to (path, path_or_null, error);
 }

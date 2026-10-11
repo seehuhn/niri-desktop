@@ -172,6 +172,28 @@ test_clamp_group_too_small_viewport (void)
   g_assert_cmpint (y, ==, 0);
 }
 
+static void
+test_cover_wide_image (void)
+{
+  double x, y, w, h;
+  layout_cover_rect (600, 800, 3000, 1000, &x, &y, &w, &h);
+  g_assert_cmpfloat_with_epsilon (h, 800, 1e-9);
+  g_assert_cmpfloat_with_epsilon (w, 2400, 1e-9);
+  g_assert_cmpfloat_with_epsilon (x, -900, 1e-9);
+  g_assert_cmpfloat_with_epsilon (y, 0, 1e-9);
+}
+
+static void
+test_cover_tall_image (void)
+{
+  double x, y, w, h;
+  layout_cover_rect (800, 600, 1000, 3000, &x, &y, &w, &h);
+  g_assert_cmpfloat_with_epsilon (w, 800, 1e-9);
+  g_assert_cmpfloat_with_epsilon (h, 2400, 1e-9);
+  g_assert_cmpfloat_with_epsilon (x, 0, 1e-9);
+  g_assert_cmpfloat_with_epsilon (y, -900, 1e-9);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -189,5 +211,7 @@ main (int argc, char **argv)
   g_test_add_func ("/layout/clamp-group-inside", test_clamp_group_inside);
   g_test_add_func ("/layout/clamp-group-right-bottom", test_clamp_group_right_bottom);
   g_test_add_func ("/layout/clamp-group-too-small-viewport", test_clamp_group_too_small_viewport);
+  g_test_add_func ("/layout/cover-wide-image", test_cover_wide_image);
+  g_test_add_func ("/layout/cover-tall-image", test_cover_tall_image);
   return g_test_run ();
 }

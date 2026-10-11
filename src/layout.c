@@ -109,3 +109,15 @@ layout_clamp_group (int *x, int *y, int group_w, int group_h,
   *x = clamp_coord (*x, group_w, viewport_w);
   *y = clamp_coord (*y, group_h, viewport_h);
 }
+
+void
+layout_cover_rect (double w, double h, double iw, double ih,
+                   double *x, double *y, double *dw, double *dh)
+{
+  double scale = MAX (w / iw, h / ih);
+
+  *dw = iw * scale;
+  *dh = ih * scale;
+  *x = (w - *dw) / 2;
+  *y = (h - *dh) / 2;
+}
