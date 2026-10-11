@@ -40,8 +40,8 @@ proportionally until it covers the whole window and centred, so the edges
 are cropped. Normally you set it from the program: right-click empty space
 and choose "Change Background…"; "Remove Background" (shown while an image is
 set) deletes the key. The choice is saved in `config.ini`, other keys and
-comments are kept. Very large images are downscaled to at most 3840 pixels
-on load. If the file cannot be loaded at startup a warning is logged and the
+comments are kept. Large images are downscaled to at most 3840 pixels on
+load; smaller ones are used at their native size. If the file cannot be loaded at startup a warning is logged and the
 plain background is used.
 
 For development, the environment variable `LNXDESKTOP_DIR` replaces the Desktop directory.

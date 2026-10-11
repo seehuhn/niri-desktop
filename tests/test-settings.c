@@ -137,6 +137,40 @@ test_background_creates_dir (void)
   g_rmdir (dir);
 }
 
+static void
+test_background_malformed_not_overwritten (void)
+{
+  g_autoptr (GError) err = NULL;
+  g_autofree char *dir = make_tmp_dir ();
+  g_autofree char *path = g_build_filename (dir, "config.ini", NULL);
+  g_autofree char *contents = NULL;
+  const char *bad = "[desktop\nicon-size=48";
+
+  g_file_set_contents (path, bad, -1, &err);
+  g_assert_no_error (err);
+  g_assert_false (settings_save_background_to (path, "/x.png", &err));
+  g_assert_nonnull (err);
+  g_assert_true (g_file_get_contents (path, &contents, NULL, NULL));
+  g_assert_cmpstr (contents, ==, bad);
+  g_remove (path);
+  g_rmdir (dir);
+}
+
+static void
+test_background_empty_is_null (void)
+{
+  g_autoptr (GError) err = NULL;
+  g_autofree char *dir = make_tmp_dir ();
+  g_autofree char *path = g_build_filename (dir, "config.ini", NULL);
+
+  g_file_set_contents (path, "[desktop]\nbackground=\n", -1, &err);
+  g_assert_no_error (err);
+  g_autofree char *bg = settings_load_background_from (path);
+  g_assert_null (bg);
+  g_remove (path);
+  g_rmdir (dir);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -150,5 +184,7 @@ main (int argc, char **argv)
   g_test_add_func ("/settings/background-keeps-other-keys", test_background_keeps_other_keys);
   g_test_add_func ("/settings/background-remove", test_background_remove);
   g_test_add_func ("/settings/background-creates-dir", test_background_creates_dir);
+  g_test_add_func ("/settings/background-malformed-not-overwritten", test_background_malformed_not_overwritten);
+  g_test_add_func ("/settings/background-empty-is-null", test_background_empty_is_null);
   return g_test_run ();
 }

@@ -47,6 +47,7 @@ typedef struct
   DesktopModel  *model;
   DesktopBackground *background;  /* unowned */
   GCancellable  *load_cancellable;  /* pending background load */
+  GCancellable  *dialog_cancellable;  /* cancelled when the window goes */
 } App;
 
 static void
@@ -54,6 +55,8 @@ app_free (App *app)
 {
   g_cancellable_cancel (app->load_cancellable);
   g_clear_object (&app->load_cancellable);
+  g_cancellable_cancel (app->dialog_cancellable);
+  g_clear_object (&app->dialog_cancellable);
   g_clear_object (&app->model);
   g_free (app);
 }
@@ -192,8 +195,8 @@ apply_texture (App        *app,
     gtk_widget_remove_css_class (GTK_WIDGET (app->window), "has-background");
 }
 
-/* Starts a load, superseding any pending one.  `path` is persisted when
- * `user_choice`; failures are only shown for user choices. */
+/* State of one background load.  `path` is persisted when `user_choice`;
+ * failures are only shown for user choices. */
 typedef struct
 {
   App      *app;  /* valid while the cancellable is not cancelled */
@@ -252,6 +255,7 @@ start_background_load (App        *app,
 {
   LoadData *data = g_new0 (LoadData, 1);
 
+  /* Starts a load, superseding any pending one. */
   g_cancellable_cancel (app->load_cancellable);
   g_clear_object (&app->load_cancellable);
   app->load_cancellable = g_cancellable_new ();
@@ -261,18 +265,46 @@ start_background_load (App        *app,
   desktop_background_load_async (path, app->load_cancellable, on_background_loaded, data);
 }
 
+typedef struct
+{
+  App          *app;
+  GCancellable *cancellable;  /* ref; cancelled when the window is gone */
+} DialogData;
+
 static void
 on_background_chosen (GObject      *source,
                       GAsyncResult *res,
                       gpointer      user_data)
 {
-  App *app = user_data;
-  g_autoptr (GFile) file = gtk_file_dialog_open_finish (GTK_FILE_DIALOG (source), res, NULL);
-  g_autofree char *path = file != NULL ? g_file_get_path (file) : NULL;
+  DialogData *dd = user_data;
+  g_autoptr (GCancellable) cancellable = dd->cancellable;
+  App *app = dd->app;
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GFile) file = gtk_file_dialog_open_finish (GTK_FILE_DIALOG (source), res, &error);
+  g_autofree char *path = NULL;
 
-  /* Dismissed or not a local file: nothing to do. */
-  if (path != NULL)
-    start_background_load (app, path, TRUE);
+  g_free (dd);
+  if (g_cancellable_is_cancelled (cancellable))
+    return;  /* the App may be gone */
+
+  if (file == NULL)
+    {
+      if (!g_error_matches (error, GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_DISMISSED) &&
+          !g_error_matches (error, GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_CANCELLED) &&
+          !g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        actions_report_error (app->window, error);
+      return;
+    }
+
+  path = g_file_get_path (file);
+  if (path == NULL)
+    {
+      g_autoptr (GError) local = g_error_new_literal (G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                                                      "Only local files can be used as a background.");
+      actions_report_error (app->window, local);
+      return;
+    }
+  start_background_load (app, path, TRUE);
 }
 
 static void
@@ -286,6 +318,8 @@ action_change_background (GSimpleAction *action G_GNUC_UNUSED,
   g_autoptr (GListStore) filters = g_list_store_new (GTK_TYPE_FILE_FILTER);
   g_autofree char *current = settings_get_background ();
   const char *pictures = g_get_user_special_dir (G_USER_DIRECTORY_PICTURES);
+  DialogData *dd = g_new0 (DialogData, 1);
+  gboolean folder_set = FALSE;
 
   gtk_file_dialog_set_title (dialog, "Choose Background Image");
   gtk_file_dialog_set_modal (dialog, TRUE);
@@ -301,16 +335,24 @@ action_change_background (GSimpleAction *action G_GNUC_UNUSED,
       g_autoptr (GFile) parent = g_file_get_parent (file);
 
       if (parent != NULL && g_file_query_exists (parent, NULL))
-        gtk_file_dialog_set_initial_folder (dialog, parent);
+        {
+          gtk_file_dialog_set_initial_folder (dialog, parent);
+          folder_set = TRUE;
+        }
     }
-  else if (pictures != NULL && g_file_test (pictures, G_FILE_TEST_IS_DIR))
+  if (!folder_set && pictures != NULL && g_file_test (pictures, G_FILE_TEST_IS_DIR))
     {
       g_autoptr (GFile) folder = g_file_new_for_path (pictures);
 
       gtk_file_dialog_set_initial_folder (dialog, folder);
     }
 
-  gtk_file_dialog_open (dialog, app->window, NULL, on_background_chosen, app);
+  if (app->dialog_cancellable == NULL)
+    app->dialog_cancellable = g_cancellable_new ();
+  dd->app = app;
+  dd->cancellable = g_object_ref (app->dialog_cancellable);
+  gtk_file_dialog_open (dialog, app->window, app->dialog_cancellable,
+                        on_background_chosen, dd);
 }
 
 static void

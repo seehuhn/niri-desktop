@@ -71,10 +71,14 @@ settings_save_background_to (const char *config_path,
 {
   g_autoptr (GKeyFile) kf = g_key_file_new ();
   g_autofree char *dir = g_path_get_dirname (config_path);
-  g_autoptr (GError) load_err = NULL;
 
-  /* A missing file is fine; an unparsable one is replaced. */
-  g_key_file_load_from_file (kf, config_path, G_KEY_FILE_KEEP_COMMENTS, &load_err);
+  /* Only a missing file is fine; never overwrite one we cannot parse. */
+  if (!g_key_file_load_from_file (kf, config_path, G_KEY_FILE_KEEP_COMMENTS, error))
+    {
+      if (!g_error_matches (*error, G_FILE_ERROR, G_FILE_ERROR_NOENT))
+        return FALSE;
+      g_clear_error (error);
+    }
 
   if (path_or_null != NULL)
     g_key_file_set_string (kf, "desktop", "background", path_or_null);

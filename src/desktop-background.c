@@ -90,11 +90,19 @@ load_thread (GTask        *task,
              gpointer      task_data,
              GCancellable *cancellable G_GNUC_UNUSED)
 {
+  const char *path = task_data;
   GError *error = NULL;
-  GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file_at_scale ((const char *) task_data,
-                                                         LOAD_MAX_SIZE, LOAD_MAX_SIZE,
-                                                         TRUE, &error);
+  int width = 0, height = 0;
+  GdkPixbuf *pixbuf;
   GdkPixbuf *oriented;
+
+  /* Only scale down; small images keep their native size. */
+  if (gdk_pixbuf_get_file_info (path, &width, &height) != NULL &&
+      (width > LOAD_MAX_SIZE || height > LOAD_MAX_SIZE))
+    pixbuf = gdk_pixbuf_new_from_file_at_scale (path, LOAD_MAX_SIZE, LOAD_MAX_SIZE,
+                                                TRUE, &error);
+  else
+    pixbuf = gdk_pixbuf_new_from_file (path, &error);
 
   if (pixbuf == NULL)
     {
