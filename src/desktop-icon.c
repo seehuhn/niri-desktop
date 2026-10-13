@@ -99,7 +99,7 @@ request_thumbnail (DesktopIcon *self)
 
   cancel_thumbnail (self);
   content_type = desktop_item_get_content_type (self->item);
-  if (content_type == NULL || !thumbnails_is_image (content_type))
+  if (content_type == NULL || !thumbnails_can_thumbnail (content_type))
     return;
 
   self->thumb_cancellable = g_cancellable_new ();
