@@ -59,3 +59,12 @@ devices and a second screen):
 - [ ] Toggle the column between full and half width; icons park and return. (needs a human pass)
 - [ ] Move the window between the 2x and 1x screens; icons stay crisp and the arrangement is unchanged when moved back. (needs a human pass)
 - [ ] Rename, trash, copy and paste, Open With..., Info. (needs a human pass)
+
+## Licence
+
+Copyright 2026 Jochen Voss <voss@seehuhn.de>
+
+niri-desktop is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version. See [LICENSE](LICENSE) for the full text.

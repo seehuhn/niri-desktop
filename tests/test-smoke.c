@@ -1,3 +1,7 @@
+/* SPDX-FileCopyrightText: 2026 Jochen Voss <voss@seehuhn.de>
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 #include <glib.h>
 
 static void

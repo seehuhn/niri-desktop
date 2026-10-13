@@ -1,5 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Jochen Voss <voss@seehuhn.de>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 project('niri-desktop', 'c',
   version: '0.1',
+  license: 'GPL-3.0-or-later',
   default_options: ['c_std=c11', 'warning_level=2'])
 
 add_project_arguments('-DGDK_DISABLE_DEPRECATION_WARNINGS', language: 'c')

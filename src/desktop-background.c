@@ -1,3 +1,7 @@
+/* SPDX-FileCopyrightText: 2026 Jochen Voss <voss@seehuhn.de>
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 #include "desktop-background.h"
 
 #include <gdk-pixbuf/gdk-pixbuf.h>

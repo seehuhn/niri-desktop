@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Jochen Voss <voss@seehuhn.de>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 test('smoke', executable('test-smoke', 'test-smoke.c',
   dependencies: niri_desktop_deps))
 test('position-store', executable('test-position-store', 'test-position-store.c',

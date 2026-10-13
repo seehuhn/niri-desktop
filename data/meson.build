@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Jochen Voss <voss@seehuhn.de>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 gnome = import('gnome')
 
 niri_desktop_resources = gnome.compile_resources('niri-desktop-resources',
