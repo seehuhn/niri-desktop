@@ -113,7 +113,7 @@ void
 actions_open_with (GtkWindow *parent, GFile *file)
 {
   GtkWidget *dialog = gtk_app_chooser_dialog_new (parent, GTK_DIALOG_MODAL, file);
-  g_object_set_data_full (G_OBJECT (dialog), "lnxdesktop-file", g_object_ref (file), g_object_unref);
+  g_object_set_data_full (G_OBJECT (dialog), "niri-desktop-file", g_object_ref (file), g_object_unref);
   g_signal_connect (dialog, "response", G_CALLBACK (chooser_response), file);
   gtk_window_present (GTK_WINDOW (dialog));
 }

@@ -1,7 +1,7 @@
-# lnxDesktop — follow-ups left open after the first implementation
+# niri-desktop — to do
 
-Non-blocking findings from the per-task and final reviews, kept so they are
-not lost. None affects correctness of the core features.
+Open findings from reviews, kept so they are not lost. None affects the
+correctness of the core features.
 
 ## Worth doing soon
 - Arrow-key navigation does not scroll an off-screen icon into view (desktop-canvas.c).
@@ -12,7 +12,7 @@ not lost. None affects correctness of the core features.
 
 ## Cosmetic / robustness
 - Rubber band: Ctrl+band does not restore items swept out again; band colour is the foreground colour, not an accent; band edges are fractional (blurred 1 px border); 5–8 px press jitter neither drags nor narrows the selection.
-- Thumbnails: temp file name is pid-only; chmod happens after the rename; cancellation only checked before decoding; all mapped icons request at once (no visibility ordering).
+- Thumbnails: temp file name is pid-only; chmod happens after the rename; cancellation only checked before decoding; all mapped icons request at once (no visibility ordering); the external-thumbnailer timeout and cancellation paths have no tests.
 - Temp files from atomic saves (`name.XXXXXX`, `.part`) flicker as icons briefly.
 - Position store: any load error (not only parse errors) triggers the `.bak` rename; write failures are only logged.
 - Info window: a load error after the window was destroyed would show an unparented dialog; a popover that never maps is only unparented on dispose.

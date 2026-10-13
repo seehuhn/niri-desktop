@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=niri-desktop
+Exec=niri-desktop
+Icon=de.seehuhn.NiriDesktop
+Type=Application
+Categories=Utility;

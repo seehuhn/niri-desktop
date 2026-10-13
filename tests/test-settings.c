@@ -7,7 +7,7 @@ static int
 load_with (const char *contents)
 {
   g_autoptr (GError) err = NULL;
-  g_autofree char *dir = g_dir_make_tmp ("lnxdesktop-settings-XXXXXX", &err);
+  g_autofree char *dir = g_dir_make_tmp ("niri-desktop-settings-XXXXXX", &err);
   g_assert_no_error (err);
   g_autofree char *path = g_build_filename (dir, "config.ini", NULL);
   g_file_set_contents (path, contents, -1, &err);
@@ -21,7 +21,7 @@ load_with (const char *contents)
 static void
 test_missing_file_default (void)
 {
-  g_assert_cmpint (settings_load_icon_size_from ("/nonexistent/lnxdesktop/config.ini"), ==, 64);
+  g_assert_cmpint (settings_load_icon_size_from ("/nonexistent/niri-desktop/config.ini"), ==, 64);
 }
 
 static void
@@ -52,7 +52,7 @@ static char *
 make_tmp_dir (void)
 {
   g_autoptr (GError) err = NULL;
-  char *dir = g_dir_make_tmp ("lnxdesktop-settings-XXXXXX", &err);
+  char *dir = g_dir_make_tmp ("niri-desktop-settings-XXXXXX", &err);
   g_assert_no_error (err);
   return dir;
 }
@@ -60,7 +60,7 @@ make_tmp_dir (void)
 static void
 test_background_missing (void)
 {
-  g_autofree char *bg = settings_load_background_from ("/nonexistent/lnxdesktop/config.ini");
+  g_autofree char *bg = settings_load_background_from ("/nonexistent/niri-desktop/config.ini");
   g_assert_null (bg);
 }
 
@@ -123,7 +123,7 @@ test_background_creates_dir (void)
 {
   g_autoptr (GError) err = NULL;
   g_autofree char *dir = make_tmp_dir ();
-  g_autofree char *sub = g_build_filename (dir, "sub", "lnxdesktop", NULL);
+  g_autofree char *sub = g_build_filename (dir, "sub", "niri-desktop", NULL);
   g_autofree char *path = g_build_filename (sub, "config.ini", NULL);
   g_autofree char *sub1 = g_build_filename (dir, "sub", NULL);
 

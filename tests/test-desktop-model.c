@@ -81,7 +81,7 @@ fixture_setup (Fixture *f, const char *const *files, const char *pos_name)
   GError *error = NULL;
   PositionStore *store;
 
-  f->dir = g_dir_make_tmp ("lnxdesktop-model-XXXXXX", &error);
+  f->dir = g_dir_make_tmp ("niri-desktop-model-XXXXXX", &error);
   g_assert_no_error (error);
   f->store_path = g_build_filename (f->dir, "positions.ini", NULL);
   f->dir_file = g_file_new_build_filename (f->dir, "desktop", NULL);
@@ -361,7 +361,7 @@ test_overwrite_replace (void)
 static void
 test_creates_missing_directory (void)
 {
-  g_autofree char *tmp = g_dir_make_tmp ("lnxdesktop-model-XXXXXX", NULL);
+  g_autofree char *tmp = g_dir_make_tmp ("niri-desktop-model-XXXXXX", NULL);
   g_autofree char *sub = g_build_filename (tmp, "no", "such", "dir", NULL);
   g_autofree char *sp = g_build_filename (tmp, "p.ini", NULL);
   g_autoptr (GFile) d = g_file_new_for_path (sub);

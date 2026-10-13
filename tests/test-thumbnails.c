@@ -124,8 +124,8 @@ static void
 test_can_thumbnail (void)
 {
   g_assert_true (thumbnails_can_thumbnail ("image/png"));
-  g_assert_true (thumbnails_can_thumbnail ("application/x-lnxdesktop-test"));
-  g_assert_false (thumbnails_can_thumbnail ("application/x-lnxdesktop-missing"));
+  g_assert_true (thumbnails_can_thumbnail ("application/x-niri-desktop-test"));
+  g_assert_false (thumbnails_can_thumbnail ("application/x-niri-desktop-missing"));
   g_assert_false (thumbnails_can_thumbnail ("text/plain"));
   g_assert_false (thumbnails_can_thumbnail (NULL));
 }
@@ -133,9 +133,9 @@ test_can_thumbnail (void)
 static void
 test_thumbnailer_lookup (void)
 {
-  g_autofree char *user = thumbnails_find_exec ("application/x-lnxdesktop-prec");
-  g_autofree char *sys1 = thumbnails_find_exec ("application/x-lnxdesktop-sys");
-  g_autofree char *multi = thumbnails_find_exec ("application/x-lnxdesktop-multi");
+  g_autofree char *user = thumbnails_find_exec ("application/x-niri-desktop-prec");
+  g_autofree char *sys1 = thumbnails_find_exec ("application/x-niri-desktop-sys");
+  g_autofree char *multi = thumbnails_find_exec ("application/x-niri-desktop-multi");
 
   /* the user directory wins over system directories */
   g_assert_cmpstr (user, ==, "cp user %o");
@@ -143,7 +143,7 @@ test_thumbnailer_lookup (void)
   g_assert_cmpstr (sys1, ==, "cp sys1 %o");
   /* one entry can list several MIME types */
   g_assert_cmpstr (multi, ==, "cp multi %o");
-  g_assert_null (thumbnails_find_exec ("application/x-lnxdesktop-missing"));
+  g_assert_null (thumbnails_find_exec ("application/x-niri-desktop-missing"));
 }
 
 static void
@@ -187,7 +187,7 @@ test_external_generates_and_caches (void)
   Result r = { 0 };
 
   g_assert_true (g_file_set_contents (src, "dummy", -1, NULL));
-  run_load (f, "application/x-lnxdesktop-test", &r);
+  run_load (f, "application/x-niri-desktop-test", &r);
   g_assert_no_error (r.error);
   g_assert_nonnull (r.paintable);
   /* the 300x200 output of the fake thumbnailer is scaled to fit 256 */
@@ -210,7 +210,7 @@ test_external_failure (void)
   Result r = { 0 };
 
   g_assert_true (g_file_set_contents (src, "dummy", -1, NULL));
-  run_load (f, "application/x-lnxdesktop-fail", &r);
+  run_load (f, "application/x-niri-desktop-fail", &r);
   g_assert_null (r.paintable);
   g_assert_nonnull (r.error);
   g_assert_false (g_file_test (cache, G_FILE_TEST_EXISTS));
@@ -251,18 +251,18 @@ setup_thumbnailers (const char *png)
   g_setenv ("XDG_DATA_HOME", home, TRUE);
   g_setenv ("XDG_DATA_DIRS", dirs, TRUE);
 
-  write_thumbnailer (user, "t.thumbnailer", "cp", e, "application/x-lnxdesktop-test");
-  write_thumbnailer (user, "p.thumbnailer", "cp", "cp user %o", "application/x-lnxdesktop-prec");
-  write_thumbnailer (user, "f.thumbnailer", NULL, "false", "application/x-lnxdesktop-fail");
+  write_thumbnailer (user, "t.thumbnailer", "cp", e, "application/x-niri-desktop-test");
+  write_thumbnailer (user, "p.thumbnailer", "cp", "cp user %o", "application/x-niri-desktop-prec");
+  write_thumbnailer (user, "f.thumbnailer", NULL, "false", "application/x-niri-desktop-fail");
   write_thumbnailer (sys1, "p.thumbnailer", "cp", "cp sys1 %o",
-                     "application/x-lnxdesktop-prec;application/x-lnxdesktop-sys");
+                     "application/x-niri-desktop-prec;application/x-niri-desktop-sys");
   write_thumbnailer (sys2, "p.thumbnailer", "cp", "cp sys2 %o",
-                     "application/x-lnxdesktop-prec;application/x-lnxdesktop-sys");
+                     "application/x-niri-desktop-prec;application/x-niri-desktop-sys");
   write_thumbnailer (sys2, "m.thumbnailer", "cp", "cp multi %o",
-                     "application/x-lnxdesktop-a;application/x-lnxdesktop-multi");
+                     "application/x-niri-desktop-a;application/x-niri-desktop-multi");
   /* the program does not exist, so this entry must be skipped */
-  write_thumbnailer (sys1, "x.thumbnailer", "lnxdesktop-no-such-program",
-                     "lnxdesktop-no-such-program %o", "application/x-lnxdesktop-missing");
+  write_thumbnailer (sys1, "x.thumbnailer", "niri-desktop-no-such-program",
+                     "niri-desktop-no-such-program %o", "application/x-niri-desktop-missing");
 }
 
 int
@@ -271,7 +271,7 @@ main (int argc, char **argv)
   g_autoptr (GError) error = NULL;
   int rc;
 
-  tmp_dir = g_dir_make_tmp ("lnxdesktop-thumb-XXXXXX", &error);
+  tmp_dir = g_dir_make_tmp ("niri-desktop-thumb-XXXXXX", &error);
   g_assert_no_error (error);
   g_setenv ("XDG_CACHE_HOME", tmp_dir, TRUE);
   {

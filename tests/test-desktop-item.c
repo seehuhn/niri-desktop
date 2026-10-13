@@ -53,7 +53,7 @@ static char *
 make_dir (void)
 {
   GError *error = NULL;
-  char *dir = g_dir_make_tmp ("lnxdesktop-item-XXXXXX", &error);
+  char *dir = g_dir_make_tmp ("niri-desktop-item-XXXXXX", &error);
   g_assert_no_error (error);
   return dir;
 }

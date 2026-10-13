@@ -1,4 +1,4 @@
-# lnxDesktop
+# niri-desktop
 
 A GTK4 application that shows the contents of `~/Desktop` as icons.
 
@@ -17,15 +17,15 @@ To install into your home directory, configure with
 Example `~/.config/niri/config.kdl` entries:
 
     window-rule {
-        match app-id="org.seehuhn.lnxdesktop"
+        match app-id="de.seehuhn.NiriDesktop"
         open-maximized true
     }
 
-    spawn-at-startup "lnxdesktop"
+    spawn-at-startup "niri-desktop"
 
 ## Configuration
 
-Optional settings live in `~/.config/lnxdesktop/config.ini`:
+Optional settings live in `~/.config/niri-desktop/config.ini`:
 
     [desktop]
     icon-size=64
@@ -44,7 +44,7 @@ comments are kept. Large images are downscaled to at most 3840 pixels on
 load; smaller ones are used at their native size. If the file cannot be loaded at startup a warning is logged and the
 plain background is used.
 
-For development, the environment variable `LNXDESKTOP_DIR` replaces the Desktop directory.
+For development, the environment variable `NIRI_DESKTOP_DIR` replaces the Desktop directory.
 
 ## Status
 

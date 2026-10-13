@@ -12,7 +12,7 @@ static void
 fixture_set_up (Fixture *f, gconstpointer data)
 {
   (void) data;
-  f->dir = g_dir_make_tmp ("lnxdesktop-test-XXXXXX", NULL);
+  f->dir = g_dir_make_tmp ("niri-desktop-test-XXXXXX", NULL);
   g_assert_nonnull (f->dir);
   f->path = g_build_filename (f->dir, "positions.ini", NULL);
 }

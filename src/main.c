@@ -13,18 +13,18 @@ load_css (void)
   g_autoptr (GtkCssProvider) provider = gtk_css_provider_new ();
 
   gtk_css_provider_load_from_resource (provider,
-                                       "/org/seehuhn/lnxdesktop/style.css");
+                                       "/de/seehuhn/NiriDesktop/style.css");
   gtk_style_context_add_provider_for_display (gdk_display_get_default (),
                                               GTK_STYLE_PROVIDER (provider),
                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 }
 
-/* LNXDESKTOP_DIR (developer override), else the XDG Desktop directory,
+/* NIRI_DESKTOP_DIR (developer override), else the XDG Desktop directory,
  * else ~/Desktop. */
 static GFile *
 desktop_directory (void)
 {
-  const char *override = g_getenv ("LNXDESKTOP_DIR");
+  const char *override = g_getenv ("NIRI_DESKTOP_DIR");
   const char *dir;
 
   if (override != NULL && *override != '\0')
@@ -556,7 +556,7 @@ on_activate (GApplication *app)
     }
 
   dir = desktop_directory ();
-  positions = g_build_filename (g_get_user_config_dir (), "lnxdesktop", "positions.ini", NULL);
+  positions = g_build_filename (g_get_user_config_dir (), "niri-desktop", "positions.ini", NULL);
   model = desktop_model_new (dir, position_store_new (positions));
   load_css ();
   window = gtk_application_window_new (GTK_APPLICATION (app));
@@ -592,7 +592,7 @@ on_activate (GApplication *app)
   state->canvas = DESKTOP_CANVAS (canvas);
   state->model = g_object_ref (model);
   state->background = DESKTOP_BACKGROUND (background);
-  g_object_set_data_full (G_OBJECT (window), "lnxdesktop-app", state, (GDestroyNotify) app_free);
+  g_object_set_data_full (G_OBJECT (window), "niri-desktop-app", state, (GDestroyNotify) app_free);
   g_action_map_add_action_entries (G_ACTION_MAP (window), win_actions,
                                    G_N_ELEMENTS (win_actions), state);
   add_shortcuts (canvas);
@@ -614,7 +614,7 @@ int
 main (int argc, char **argv)
 {
   g_autoptr (GtkApplication) app =
-    gtk_application_new ("org.seehuhn.lnxdesktop", G_APPLICATION_DEFAULT_FLAGS);
+    gtk_application_new ("de.seehuhn.NiriDesktop", G_APPLICATION_DEFAULT_FLAGS);
 
   g_signal_connect (app, "activate", G_CALLBACK (on_activate), NULL);
   return g_application_run (G_APPLICATION (app), argc, argv);

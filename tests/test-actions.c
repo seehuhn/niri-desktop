@@ -7,7 +7,7 @@ static GFile *
 make_dir (void)
 {
   g_autoptr (GError) err = NULL;
-  g_autofree char *dir = g_dir_make_tmp ("lnxdesktop-actions-XXXXXX", &err);
+  g_autofree char *dir = g_dir_make_tmp ("niri-desktop-actions-XXXXXX", &err);
   g_assert_no_error (err);
   return g_file_new_for_path (dir);
 }

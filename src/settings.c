@@ -31,7 +31,7 @@ settings_get_icon_size (void)
   if (g_once_init_enter (&once))
     {
       g_autofree char *path =
-        g_build_filename (g_get_user_config_dir (), "lnxdesktop", "config.ini", NULL);
+        g_build_filename (g_get_user_config_dir (), "niri-desktop", "config.ini", NULL);
       size = settings_load_icon_size_from (path);
       g_once_init_leave (&once, 1);
     }
@@ -99,7 +99,7 @@ settings_save_background_to (const char *config_path,
 static char *
 config_path (void)
 {
-  return g_build_filename (g_get_user_config_dir (), "lnxdesktop", "config.ini", NULL);
+  return g_build_filename (g_get_user_config_dir (), "niri-desktop", "config.ini", NULL);
 }
 
 char *
