@@ -19,6 +19,29 @@ name_taken (GFile *dir, const char *name, GHashTable *reserved)
   return info != NULL || !g_error_matches (error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND);
 }
 
+/* If name[0..*stem_len) ends in " (N)" with N a positive number without
+ * leading zeros, drops that suffix from *stem_len and sets *next to N + 1,
+ * so that "a (2)" continues as "a (3)" rather than "a (2) (2)". */
+static void
+numbered_stem (const char *name, gsize *stem_len, int *next)
+{
+  gsize len = *stem_len;
+  gsize open, digits;
+
+  if (len < 4 || name[len - 1] != ')')
+    return;
+  open = len - 1;
+  while (open > 0 && g_ascii_isdigit (name[open - 1]))
+    open--;
+  digits = len - 1 - open;
+  if (digits == 0 || digits > 9 || name[open] == '0' ||
+      open < 2 || name[open - 1] != '(' || name[open - 2] != ' ')
+    return;
+
+  *next = (int) g_ascii_strtoll (name + open, NULL, 10) + 1;
+  *stem_len = open - 2;
+}
+
 char *
 actions_unique_name_with_reserved (GFile *dir, const char *name, GHashTable *reserved)
 {
@@ -28,8 +51,10 @@ actions_unique_name_with_reserved (GFile *dir, const char *name, GHashTable *res
   const char *dot = strrchr (name, '.');
   gsize stem_len = (dot != NULL && dot != name) ? (gsize) (dot - name) : strlen (name);
   const char *ext = (dot != NULL && dot != name) ? dot : "";
+  int start = 2;
 
-  for (int n = 2;; n++)
+  numbered_stem (name, &stem_len, &start);
+  for (int n = start;; n++)
     {
       g_autofree char *candidate = g_strdup_printf ("%.*s (%d)%s", (int) stem_len, name, n, ext);
       if (!name_taken (dir, candidate, reserved))

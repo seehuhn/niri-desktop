@@ -85,6 +85,38 @@ test_dotfile (void)
 }
 
 static void
+test_numbered (void)
+{
+  const char *e1[] = { "a.txt", "a (2).txt", NULL };
+  check (e1, "a (2).txt", "a (3).txt");
+  const char *e2[] = { "a (9).txt", NULL };
+  check (e2, "a (9).txt", "a (10).txt");
+  const char *e3[] = { "a (2).txt", "a (3).txt", NULL };
+  check (e3, "a (2).txt", "a (4).txt");
+  const char *e4[] = { "Makefile (2)", NULL };
+  check (e4, "Makefile (2)", "Makefile (3)");
+  const char *e5[] = { "a (1).txt", NULL };
+  check (e5, "a (1).txt", "a (2).txt");
+}
+
+static void
+test_not_numbered (void)
+{
+  const char *e1[] = { "a (x).txt", NULL };
+  check (e1, "a (x).txt", "a (x) (2).txt");
+  const char *e2[] = { "a(2).txt", NULL };
+  check (e2, "a(2).txt", "a(2) (2).txt");
+  const char *e3[] = { "a (0).txt", NULL };
+  check (e3, "a (0).txt", "a (0) (2).txt");
+  const char *e4[] = { "a (02).txt", NULL };
+  check (e4, "a (02).txt", "a (02) (2).txt");
+  const char *e5[] = { "(2)", NULL };
+  check (e5, "(2)", "(2) (2)");
+  const char *e6[] = { "a (99999999999).txt", NULL };
+  check (e6, "a (99999999999).txt", "a (99999999999) (2).txt");
+}
+
+static void
 test_reserved (void)
 {
   g_autoptr (GFile) dir = make_dir ();
@@ -193,6 +225,8 @@ main (int argc, char **argv)
   g_test_add_func ("/actions/unique-name-single-extension", test_single_extension);
   g_test_add_func ("/actions/unique-name-dotfile", test_dotfile);
   g_test_add_func ("/actions/unique-name-reserved", test_reserved);
+  g_test_add_func ("/actions/unique-name-numbered", test_numbered);
+  g_test_add_func ("/actions/unique-name-not-numbered", test_not_numbered);
   g_test_add_func ("/actions/copy-recursive", test_copy_recursive);
   g_test_add_func ("/actions/copy-recursive-existing-fails", test_copy_recursive_existing_fails);
   g_test_add_func ("/actions/delete-recursive", test_delete_recursive);
