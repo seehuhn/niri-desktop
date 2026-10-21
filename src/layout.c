@@ -38,6 +38,37 @@ cell_rect (int viewport_width, int pitch_w, int pitch_h, int c, int r)
   return cell;
 }
 
+/* Puts item i into the first free cell, adding rows below as needed. */
+static void
+park (LayoutItem *items, gboolean *placed, guint n_items, guint i,
+      int viewport_width, int pitch_w, int pitch_h, int cols, int *rows)
+{
+  gboolean found = FALSE;
+  Rect cell = { 0 };
+
+  for (int c = 0; c < cols && !found; c++)
+    for (int r = 0; r < *rows && !found; r++)
+      {
+        cell = cell_rect (viewport_width, pitch_w, pitch_h, c, r);
+        found = cell_is_free (items, placed, n_items, &cell);
+      }
+
+  while (!found)
+    {
+      (*rows)++;
+      for (int c = 0; c < cols && !found; c++)
+        {
+          cell = cell_rect (viewport_width, pitch_w, pitch_h, c, *rows - 1);
+          found = cell_is_free (items, placed, n_items, &cell);
+        }
+    }
+
+  items[i].out_x = cell.x;
+  items[i].out_y = cell.y;
+  items[i].parked = TRUE;
+  placed[i] = TRUE;
+}
+
 int
 layout_arrange (LayoutItem *items, guint n_items, int viewport_width, int viewport_height,
                 int pitch_w, int pitch_h)
@@ -59,40 +90,18 @@ layout_arrange (LayoutItem *items, guint n_items, int viewport_width, int viewpo
         }
     }
 
-  /* Pass 2: park the rest in free cells, scanning from the top right. */
+  /* Pass 2: park the rest in free cells, scanning from the top right.
+   * Items whose stored position does not fit go first, so that a new item
+   * never takes the cell of an item that was already on the desktop. */
   int cols = MAX (1, viewport_width / pitch_w);
   int rows = MAX (1, viewport_height / pitch_h);
 
   for (guint i = 0; i < n_items; i++)
-    {
-      if (placed[i])
-        continue;
-
-      gboolean found = FALSE;
-      Rect cell = { 0 };
-
-      for (int c = 0; c < cols && !found; c++)
-        for (int r = 0; r < rows && !found; r++)
-          {
-            cell = cell_rect (viewport_width, pitch_w, pitch_h, c, r);
-            found = cell_is_free (items, placed, n_items, &cell);
-          }
-
-      while (!found)
-        {
-          rows++;
-          for (int c = 0; c < cols && !found; c++)
-            {
-              cell = cell_rect (viewport_width, pitch_w, pitch_h, c, rows - 1);
-              found = cell_is_free (items, placed, n_items, &cell);
-            }
-        }
-
-      items[i].out_x = cell.x;
-      items[i].out_y = cell.y;
-      items[i].parked = TRUE;
-      placed[i] = TRUE;
-    }
+    if (!placed[i] && items[i].has_position)
+      park (items, placed, n_items, i, viewport_width, pitch_w, pitch_h, cols, &rows);
+  for (guint i = 0; i < n_items; i++)
+    if (!placed[i])
+      park (items, placed, n_items, i, viewport_width, pitch_w, pitch_h, cols, &rows);
 
   int content = viewport_height;
   for (guint i = 0; i < n_items; i++)

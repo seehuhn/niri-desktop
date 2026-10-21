@@ -19,6 +19,7 @@ struct _DesktopCanvas
   GHashTable   *icons;   /* DesktopItem* -> DesktopIcon* (both unowned) */
   GtkAdjustment *vadj;   /* parent's vertical adjustment while rooted */
   guint         page_tick;  /* pending resize after a page-size change */
+  guint         place_tick; /* pending save of new icons' positions */
   guint         selection_idle;  /* pending selection-changed emission */
 
   double        press_x, press_y;  /* last press, canvas coordinates */
@@ -73,6 +74,44 @@ on_page_size (DesktopCanvas *self)
   if (self->page_tick == 0)
     self->page_tick = gtk_widget_add_tick_callback (GTK_WIDGET (self), page_size_tick,
                                                     NULL, NULL);
+}
+
+/* Saves where the layout put each icon without a stored position, so that
+ * later arrivals cannot push it to another cell.  Icons outside the visible
+ * area stay unplaced, as a stored position there would not be honoured. */
+static gboolean
+place_tick (GtkWidget     *widget,
+            GdkFrameClock *clock G_GNUC_UNUSED,
+            gpointer       data G_GNUC_UNUSED)
+{
+  DesktopCanvas *self = DESKTOP_CANVAS (widget);
+  int vp_w = gtk_widget_get_width (widget);
+  int vp_h = self->vadj != NULL ? (int) gtk_adjustment_get_page_size (self->vadj)
+                                : gtk_widget_get_height (widget);
+  GtkWidget *child;
+
+  self->place_tick = 0;
+  if (vp_w <= 0 || vp_h <= 0)
+    return G_SOURCE_REMOVE;
+
+  for (child = gtk_widget_get_first_child (widget);
+       child != NULL;
+       child = gtk_widget_get_next_sibling (child))
+    {
+      DesktopItem *item;
+      graphene_rect_t b;
+
+      if (!DESKTOP_IS_ICON (child))
+        continue;
+      item = desktop_icon_get_item (DESKTOP_ICON (child));
+      if (desktop_item_get_position (item, NULL, NULL)
+          || !gtk_widget_compute_bounds (child, widget, &b))
+        continue;
+      if (b.origin.x >= 0 && b.origin.y >= 0 &&
+          b.origin.x + b.size.width <= vp_w && b.origin.y + b.size.height <= vp_h)
+        desktop_model_set_position (self->model, item, (int) b.origin.x, (int) b.origin.y);
+    }
+  return G_SOURCE_REMOVE;
 }
 
 /* A position change can change the content height, hence a full resize. */
@@ -921,7 +960,14 @@ disconnect_vadj (DesktopCanvas *self)
 static void
 desktop_canvas_unroot (GtkWidget *widget)
 {
-  disconnect_vadj (DESKTOP_CANVAS (widget));
+  DesktopCanvas *self = DESKTOP_CANVAS (widget);
+
+  disconnect_vadj (self);
+  if (self->place_tick != 0)
+    {
+      gtk_widget_remove_tick_callback (widget, self->place_tick);
+      self->place_tick = 0;
+    }
   GTK_WIDGET_CLASS (desktop_canvas_parent_class)->unroot (widget);
 }
 
@@ -958,9 +1004,24 @@ desktop_canvas_size_allocate (GtkWidget *widget,
                               int        height,
                               int        baseline)
 {
+  DesktopCanvas *self = DESKTOP_CANVAS (widget);
   GtkWidget *child;
 
   GTK_WIDGET_CLASS (desktop_canvas_parent_class)->size_allocate (widget, width, height, baseline);
+
+  /* Setting positions here would queue a resize during allocation, which
+   * GTK drops; save them on the next frame instead. */
+  if (self->place_tick == 0)
+    for (child = gtk_widget_get_first_child (widget);
+         child != NULL;
+         child = gtk_widget_get_next_sibling (child))
+      if (DESKTOP_IS_ICON (child)
+          && !desktop_item_get_position (desktop_icon_get_item (DESKTOP_ICON (child)), NULL, NULL))
+        {
+          self->place_tick = gtk_widget_add_tick_callback (widget, place_tick, NULL, NULL);
+          break;
+        }
+
   for (child = gtk_widget_get_first_child (widget);
        child != NULL;
        child = gtk_widget_get_next_sibling (child))

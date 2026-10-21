@@ -66,6 +66,17 @@ test_park_skips_occupied (void)
 }
 
 static void
+test_new_after_displaced (void)
+{
+  LayoutItem it[2] = { fresh (), stored (450, 10) };
+  layout_arrange (it, 2, 500, 400, 112, 128);
+  g_assert_cmpint (it[1].out_x, ==, 388);
+  g_assert_cmpint (it[1].out_y, ==, 0);
+  g_assert_cmpint (it[0].out_x, ==, 388);
+  g_assert_cmpint (it[0].out_y, ==, 128);
+}
+
+static void
 test_grows_downward (void)
 {
   LayoutItem it[3] = { fresh (), fresh (), fresh () };
@@ -206,6 +217,7 @@ main (int argc, char **argv)
   g_test_add_func ("/layout/stored-overflow-parks", test_stored_overflow_parks);
   g_test_add_func ("/layout/new-fill-top-right-then-down", test_new_fill);
   g_test_add_func ("/layout/park-skips-occupied", test_park_skips_occupied);
+  g_test_add_func ("/layout/new-after-displaced", test_new_after_displaced);
   g_test_add_func ("/layout/grows-downward", test_grows_downward);
   g_test_add_func ("/layout/tiny-viewport", test_tiny_viewport);
   g_test_add_func ("/layout/overlapping-stored-kept", test_overlapping_stored_kept);
