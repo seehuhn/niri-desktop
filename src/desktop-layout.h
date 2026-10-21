@@ -12,7 +12,8 @@ G_BEGIN_DECLS
 G_DECLARE_FINAL_TYPE (DesktopLayout, desktop_layout, DESKTOP, LAYOUT, GtkLayoutManager)
 
 /* Children are DesktopIcon, in model order; positions come from
- * desktop_item_get_position of each child's item. */
+ * desktop_item_get_position of each child's item.  Emits "allocated"
+ * after each allocation of the children. */
 GtkLayoutManager *desktop_layout_new (void);
 
 G_END_DECLS

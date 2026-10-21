@@ -997,17 +997,13 @@ desktop_canvas_dispose (GObject *object)
   G_OBJECT_CLASS (desktop_canvas_parent_class)->dispose (object);
 }
 
-/* Popovers parented to the canvas (context menus) follow it. */
+/* GTK does not call size_allocate on a widget with a layout manager, so
+ * work that follows an allocation hangs off the layout's signal. */
 static void
-desktop_canvas_size_allocate (GtkWidget *widget,
-                              int        width,
-                              int        height,
-                              int        baseline)
+on_layout_allocated (DesktopCanvas *self)
 {
-  DesktopCanvas *self = DESKTOP_CANVAS (widget);
+  GtkWidget *widget = GTK_WIDGET (self);
   GtkWidget *child;
-
-  GTK_WIDGET_CLASS (desktop_canvas_parent_class)->size_allocate (widget, width, height, baseline);
 
   /* Setting positions here would queue a resize during allocation, which
    * GTK drops; save them on the next frame instead. */
@@ -1025,7 +1021,7 @@ desktop_canvas_size_allocate (GtkWidget *widget,
   for (child = gtk_widget_get_first_child (widget);
        child != NULL;
        child = gtk_widget_get_next_sibling (child))
-    if (GTK_IS_POPOVER (child))
+    if (GTK_IS_POPOVER (child))  /* context menus follow the canvas */
       gtk_popover_present (GTK_POPOVER (child));
 }
 
@@ -1039,7 +1035,6 @@ desktop_canvas_class_init (DesktopCanvasClass *klass)
   widget_class->root = desktop_canvas_root;
   widget_class->unroot = desktop_canvas_unroot;
   widget_class->snapshot = desktop_canvas_snapshot;
-  widget_class->size_allocate = desktop_canvas_size_allocate;
   gtk_widget_class_set_layout_manager_type (widget_class, DESKTOP_TYPE_LAYOUT);
   gtk_widget_class_set_css_name (widget_class, "desktopcanvas");
 
@@ -1067,6 +1062,8 @@ desktop_canvas_init (DesktopCanvas *self)
 
   self->icons = g_hash_table_new (NULL, NULL);
   self->drag_offsets = g_array_new (FALSE, FALSE, sizeof (DragOffset));
+  g_signal_connect_swapped (gtk_widget_get_layout_manager (widget), "allocated",
+                            G_CALLBACK (on_layout_allocated), self);
   g_array_set_clear_func (self->drag_offsets, drag_offset_clear);
 
   capture = gtk_gesture_click_new ();

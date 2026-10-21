@@ -15,6 +15,13 @@ struct _DesktopLayout
 
 G_DEFINE_FINAL_TYPE (DesktopLayout, desktop_layout, GTK_TYPE_LAYOUT_MANAGER)
 
+enum {
+  SIGNAL_ALLOCATED,
+  N_SIGNALS
+};
+
+static guint signals[N_SIGNALS];
+
 /* Height of the visible area: the page size of the parent scrollable's
  * vertical adjustment, or 0.  The canvas queues a resize whenever the
  * page size changes, so measure may depend on it. */
@@ -101,7 +108,7 @@ desktop_layout_measure (GtkLayoutManager *manager G_GNUC_UNUSED,
 }
 
 static void
-desktop_layout_allocate (GtkLayoutManager *manager G_GNUC_UNUSED,
+desktop_layout_allocate (GtkLayoutManager *manager,
                          GtkWidget        *widget,
                          int               width,
                          int               height,
@@ -134,6 +141,8 @@ desktop_layout_allocate (GtkLayoutManager *manager G_GNUC_UNUSED,
                                 &(GtkAllocation) { li->out_x, li->out_y, li->width, li->height },
                                 -1);
     }
+
+  g_signal_emit (manager, signals[SIGNAL_ALLOCATED], 0);
 }
 
 static void
@@ -144,6 +153,11 @@ desktop_layout_class_init (DesktopLayoutClass *klass)
   manager_class->get_request_mode = desktop_layout_get_request_mode;
   manager_class->measure = desktop_layout_measure;
   manager_class->allocate = desktop_layout_allocate;
+
+  signals[SIGNAL_ALLOCATED] =
+    g_signal_new ("allocated", G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST,
+                  0, NULL, NULL, NULL,
+                  G_TYPE_NONE, 0);
 }
 
 static void
