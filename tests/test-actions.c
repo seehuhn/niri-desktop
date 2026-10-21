@@ -215,6 +215,105 @@ test_delete_recursive (void)
   g_assert_true (g_file_delete (root, NULL, NULL));
 }
 
+/* Runs the main loop until file exists, failing after a few seconds. */
+static void
+wait_for (GFile *file)
+{
+  gint64 deadline = g_get_monotonic_time () + 5 * G_USEC_PER_SEC;
+
+  while (!g_file_query_exists (file, NULL))
+    {
+      g_assert_cmpint (g_get_monotonic_time (), <, deadline);
+      g_main_context_iteration (NULL, FALSE);
+    }
+}
+
+static void
+test_transfer_into_folder (void)
+{
+  g_autoptr (GError) err = NULL;
+  g_autoptr (GFile) root = make_dir ();
+  g_autoptr (GFile) folder = g_file_get_child (root, "folder");
+  g_autoptr (GFile) a = g_file_get_child (root, "a.txt");
+  g_autoptr (GFile) b = g_file_get_child (root, "b.txt");
+  g_autoptr (GFile) moved_a = g_file_get_child (folder, "a (2).txt");
+  g_autoptr (GFile) moved_b = g_file_get_child (folder, "b.txt");
+  GList *files = NULL;
+
+  g_assert_true (g_file_make_directory (folder, NULL, &err));
+  touch (folder, "a.txt");
+  touch (root, "a.txt");
+  touch (root, "b.txt");
+
+  files = g_list_append (files, a);
+  files = g_list_append (files, b);
+  files = g_list_append (files, folder);
+  actions_transfer (NULL, files, folder, TRUE);
+  g_list_free (files);
+
+  wait_for (moved_a);
+  wait_for (moved_b);
+  g_assert_false (g_file_query_exists (a, NULL));
+  g_assert_false (g_file_query_exists (b, NULL));
+  g_assert_true (g_file_query_exists (folder, NULL));
+
+  g_assert_true (actions_delete_recursive (root, NULL, &err));
+  g_assert_no_error (err);
+}
+
+static void
+test_transfer_copy (void)
+{
+  g_autoptr (GError) err = NULL;
+  g_autoptr (GFile) root = make_dir ();
+  g_autoptr (GFile) folder = g_file_get_child (root, "folder");
+  g_autoptr (GFile) sub = g_file_get_child (folder, "sub");
+  g_autoptr (GFile) other = g_file_get_child (root, "other");
+  g_autoptr (GFile) a = g_file_get_child (root, "a.txt");
+  g_autoptr (GFile) other_a = g_file_get_child (other, "a.txt");
+  g_autoptr (GFile) copy_a = g_file_get_child (sub, "a.txt");
+  g_autoptr (GFile) copy_a2 = g_file_get_child (sub, "a (2).txt");
+  g_autoptr (GFile) nested = g_file_get_child (sub, "folder");
+  GList *files = NULL;
+
+  g_assert_true (g_file_make_directory (folder, NULL, &err));
+  g_assert_true (g_file_make_directory (sub, NULL, &err));
+  g_assert_true (g_file_make_directory (other, NULL, &err));
+  touch (root, "a.txt");
+  touch (other, "a.txt");
+
+  /* Two sources with one name, and an ancestor of the target. */
+  files = g_list_append (files, a);
+  files = g_list_append (files, other_a);
+  files = g_list_append (files, folder);
+  actions_transfer (NULL, files, sub, FALSE);
+  g_list_free (files);
+
+  wait_for (copy_a);
+  wait_for (copy_a2);
+  g_assert_true (g_file_query_exists (a, NULL));
+  g_assert_true (g_file_query_exists (other_a, NULL));
+  g_assert_false (g_file_query_exists (nested, NULL));
+
+  g_assert_true (actions_delete_recursive (root, NULL, &err));
+  g_assert_no_error (err);
+}
+
+static void
+test_same_filesystem (void)
+{
+  g_autoptr (GFile) root = make_dir ();
+  g_autoptr (GFile) a = g_file_get_child (root, "a.txt");
+  g_autoptr (GFile) missing = g_file_get_child (root, "missing");
+  g_autoptr (GFile) remote = g_file_new_for_uri ("http://example.org/x");
+
+  touch (root, "a.txt");
+  g_assert_true (actions_same_filesystem (a, root));
+  g_assert_false (actions_same_filesystem (a, missing));
+  g_assert_false (actions_same_filesystem (a, remote));
+  cleanup (root, (const char *[]) { "a.txt", NULL });
+}
+
 int
 main (int argc, char **argv)
 {
@@ -230,5 +329,8 @@ main (int argc, char **argv)
   g_test_add_func ("/actions/copy-recursive", test_copy_recursive);
   g_test_add_func ("/actions/copy-recursive-existing-fails", test_copy_recursive_existing_fails);
   g_test_add_func ("/actions/delete-recursive", test_delete_recursive);
+  g_test_add_func ("/actions/transfer-into-folder", test_transfer_into_folder);
+  g_test_add_func ("/actions/transfer-copy", test_transfer_copy);
+  g_test_add_func ("/actions/same-filesystem", test_same_filesystem);
   return g_test_run ();
 }

@@ -36,6 +36,8 @@ struct _DesktopCanvas
   DesktopItem  *drag_source_item;  /* owned */
   double        drag_hot_x, drag_hot_y;  /* pointer inside the dragged icon */
   GArray       *drag_offsets;      /* DragOffset, one per dragged item */
+  GtkWidget    *drop_folder;       /* highlighted folder icon, unowned */
+  gboolean      drop_moves;        /* the last motion answered MOVE */
 };
 
 typedef struct
@@ -714,20 +716,118 @@ is_local_drop (DesktopCanvas *self,
          && self->drag_source_item != NULL;
 }
 
+static gboolean
+is_dragged (DesktopCanvas *self,
+            DesktopItem   *item)
+{
+  for (guint i = 0; i < self->drag_offsets->len; i++)
+    if (g_array_index (self->drag_offsets, DragOffset, i).item == item)
+      return TRUE;
+  return FALSE;
+}
+
+/* The folder icon under (x, y) that a drop would go into, or NULL.  A
+ * folder that is itself being dragged does not count. */
+static GtkWidget *
+folder_at (DesktopCanvas *self,
+           GdkDrop       *drop,
+           double         x,
+           double         y)
+{
+  gboolean local = is_local_drop (self, drop);
+  GtkWidget *child;
+
+  for (child = gtk_widget_get_first_child (GTK_WIDGET (self));
+       child != NULL;
+       child = gtk_widget_get_next_sibling (child))
+    {
+      DesktopItem *item;
+      graphene_rect_t b;
+
+      if (!DESKTOP_IS_ICON (child)
+          || !gtk_widget_compute_bounds (child, GTK_WIDGET (self), &b)
+          || !graphene_rect_contains_point (&b, &GRAPHENE_POINT_INIT ((float) x, (float) y)))
+        continue;
+      item = desktop_icon_get_item (DESKTOP_ICON (child));
+      if (desktop_item_is_directory (item) && !(local && is_dragged (self, item)))
+        return child;
+    }
+  return NULL;
+}
+
+static void
+set_drop_folder (DesktopCanvas *self,
+                 GtkWidget     *icon)
+{
+  if (self->drop_folder == icon)
+    return;
+  if (self->drop_folder != NULL)
+    gtk_widget_remove_css_class (self->drop_folder, "drop-target");
+  self->drop_folder = icon;
+  if (icon != NULL)
+    gtk_widget_add_css_class (icon, "drop-target");
+}
+
+static void
+on_drop_leave (GtkDropTarget *target G_GNUC_UNUSED,
+               DesktopCanvas *self)
+{
+  set_drop_folder (self, NULL);
+}
+
+/* Whether an external drop of value into dir moves: when the source
+ * offers only a move (Shift held), or offers both and all files are on
+ * dir's file system, as file managers do. */
+static gboolean
+external_drop_moves (GdkDrop      *drop,
+                     const GValue *value,
+                     GFile        *dir)
+{
+  GdkDragAction actions = drop != NULL ? gdk_drop_get_actions (drop) : 0;
+  GSList *files, *l;
+  gboolean same;
+
+  if (!(actions & GDK_ACTION_MOVE))
+    return FALSE;
+  if (!(actions & GDK_ACTION_COPY))
+    return TRUE;
+  if (value == NULL || !G_VALUE_HOLDS (value, GDK_TYPE_FILE_LIST))
+    return FALSE;
+  files = gdk_file_list_get_files (g_value_get_boxed (value));
+  same = files != NULL;
+  for (l = files; l != NULL && same; l = l->next)
+    same = actions_same_filesystem (l->data, dir);
+  g_slist_free (files);
+  return same;
+}
+
+/* The directory a drop at (x, y) goes into: a folder icon's, or the desktop's. */
+static GFile *
+drop_dir (DesktopCanvas *self,
+          GtkWidget     *folder)
+{
+  if (folder != NULL)
+    return desktop_item_get_file (desktop_icon_get_item (DESKTOP_ICON (folder)));
+  return desktop_model_get_directory (self->model);
+}
+
 static GdkDragAction
 on_drop_motion (GtkDropTarget *target,
-                double         x G_GNUC_UNUSED,
-                double         y G_GNUC_UNUSED,
+                double         x,
+                double         y,
                 DesktopCanvas *self)
 {
   GdkDrop *drop = gtk_drop_target_get_current_drop (target);
+  GtkWidget *folder;
 
-  if (is_local_drop (self, drop))
-    return GDK_ACTION_MOVE;
-  /* External drags copy, unless the source only offers a move. */
-  if (drop != NULL && gdk_drop_get_actions (drop) == GDK_ACTION_MOVE)
-    return GDK_ACTION_MOVE;
-  return GDK_ACTION_COPY;
+  folder = folder_at (self, drop, x, y);
+  set_drop_folder (self, folder);
+  /* The value is preloaded, but may not have arrived yet.  on_drop
+   * follows this answer, so that the result matches the cursor. */
+  self->drop_moves = is_local_drop (self, drop)
+                     || external_drop_moves (drop, gtk_drop_target_get_value (target),
+                                             drop_dir (self, folder));
+  return self->drop_moves ? GDK_ACTION_MOVE : GDK_ACTION_COPY;
 }
 
 /* The area in which the layout keeps stored positions: the canvas width
@@ -815,9 +915,12 @@ on_drop (GtkDropTarget *target,
   GSList *slist, *sl;
   GList *files = NULL;
   gboolean move;
+  GtkWidget *folder = folder_at (self, drop, x, y);
+  gboolean local = is_local_drop (self, drop);
   int ix, iy, vp_w, vp_h;
 
-  if (is_local_drop (self, drop))
+  set_drop_folder (self, NULL);
+  if (local && folder == NULL)
     {
       move_dragged_items (self, x, y);
       return TRUE;
@@ -834,14 +937,26 @@ on_drop (GtkDropTarget *target,
   if (files == NULL)
     return FALSE;
 
+  move = local || self->drop_moves;
+  root = gtk_widget_get_root (GTK_WIDGET (self));
+  if (folder != NULL)
+    {
+      DesktopItem *item = desktop_icon_get_item (DESKTOP_ICON (folder));
+
+      actions_transfer (GTK_IS_WINDOW (root) ? GTK_WINDOW (root) : NULL, files,
+                        desktop_item_get_file (item), move);
+      g_list_free (files);
+      if (local)
+        clear_drag (self);
+      return TRUE;
+    }
+
   /* actions_import stacks the files one pitch apart below the point. */
   ix = (int) x - pitch_w / 2;
   iy = (int) y - pitch_h / 2;
   drop_area (self, &vp_w, &vp_h);
   layout_clamp_group (&ix, &iy, pitch_w, (int) g_list_length (files) * pitch_h, vp_w, vp_h);
 
-  move = drop != NULL && gdk_drop_get_actions (drop) == GDK_ACTION_MOVE;
-  root = gtk_widget_get_root (GTK_WIDGET (self));
   actions_import (GTK_IS_WINDOW (root) ? GTK_WINDOW (root) : NULL, self->model, files,
                   move, TRUE, ix, iy);
   g_list_free (files);
@@ -873,6 +988,8 @@ remove_icon (DesktopCanvas *self,
     self->focus_item = NULL;
   if (self->pending_single == item)
     self->pending_single = NULL;
+  if (self->drop_folder == icon)
+    self->drop_folder = NULL;
   g_signal_handlers_disconnect_by_func (item, queue_resize, self);
   g_signal_handlers_disconnect_by_func (item, queue_selection_changed, self);
   if (is_selected (item))
@@ -1091,8 +1208,10 @@ desktop_canvas_init (DesktopCanvas *self)
   gtk_widget_add_controller (widget, key);
 
   drop = gtk_drop_target_new (GDK_TYPE_FILE_LIST, GDK_ACTION_COPY | GDK_ACTION_MOVE);
+  gtk_drop_target_set_preload (drop, TRUE);
   g_signal_connect (drop, "enter", G_CALLBACK (on_drop_motion), self);
   g_signal_connect (drop, "motion", G_CALLBACK (on_drop_motion), self);
+  g_signal_connect (drop, "leave", G_CALLBACK (on_drop_leave), self);
   g_signal_connect (drop, "drop", G_CALLBACK (on_drop), self);
   gtk_widget_add_controller (widget, GTK_EVENT_CONTROLLER (drop));
 

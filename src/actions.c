@@ -380,6 +380,23 @@ transfer_done (GObject *source, GAsyncResult *res, gpointer user_data)
   transfer_data_free (td);
 }
 
+static void
+start_transfer (GtkWindow *parent, GFile *src, GFile *dest, gboolean move)
+{
+  TransferData *td = g_new0 (TransferData, 1);
+
+  td->parent = parent_ref (parent);
+  td->src = g_object_ref (src);
+  td->dest = g_object_ref (dest);
+  td->move = move;
+  if (move)
+    g_file_move_async (src, dest, G_FILE_COPY_NONE, G_PRIORITY_DEFAULT, NULL, NULL, NULL,
+                       transfer_done, td);
+  else
+    g_file_copy_async (src, dest, G_FILE_COPY_NONE, G_PRIORITY_DEFAULT, NULL, NULL, NULL,
+                       transfer_done, td);
+}
+
 void
 actions_import (GtkWindow *parent, DesktopModel *model, GList *files,
                 gboolean move, gboolean has_point, int x, int y)
@@ -416,18 +433,57 @@ actions_import (GtkWindow *parent, DesktopModel *model, GList *files,
       g_autoptr (GFile) dest = g_file_get_child (dir, unique);
       if (has_point)
         desktop_model_preseed_position (model, unique, x, yk);
+      start_transfer (parent, src, dest, move);
+    }
+}
 
-      TransferData *td = g_new0 (TransferData, 1);
-      td->parent = parent_ref (parent);
-      td->src = g_object_ref (src);
-      td->dest = g_object_ref (dest);
-      td->move = move;
-      if (move)
-        g_file_move_async (src, dest, G_FILE_COPY_NONE, G_PRIORITY_DEFAULT, NULL, NULL, NULL,
-                           transfer_done, td);
-      else
-        g_file_copy_async (src, dest, G_FILE_COPY_NONE, G_PRIORITY_DEFAULT, NULL, NULL, NULL,
-                           transfer_done, td);
+static char *
+filesystem_id (GFile *file)
+{
+  g_autoptr (GFileInfo) info =
+    g_file_query_info (file, G_FILE_ATTRIBUTE_ID_FILESYSTEM, G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,
+                       NULL, NULL);
+
+  return info != NULL ? g_strdup (g_file_info_get_attribute_string (info,
+                                                                    G_FILE_ATTRIBUTE_ID_FILESYSTEM))
+                      : NULL;
+}
+
+gboolean
+actions_same_filesystem (GFile *a, GFile *b)
+{
+  g_autofree char *id_a = NULL;
+  g_autofree char *id_b = NULL;
+
+  /* Remote files would need a round trip; treat them as foreign. */
+  if (!g_file_is_native (a) || !g_file_is_native (b))
+    return FALSE;
+  id_a = filesystem_id (a);
+  id_b = filesystem_id (b);
+  return id_a != NULL && g_strcmp0 (id_a, id_b) == 0;
+}
+
+void
+actions_transfer (GtkWindow *parent, GList *files, GFile *dir, gboolean move)
+{
+  g_autoptr (GHashTable) reserved = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+
+  for (GList *l = files; l; l = l->next)
+    {
+      GFile *src = l->data;
+      g_autoptr (GFile) src_parent = g_file_get_parent (src);
+
+      /* A folder cannot go inside itself or a folder below it. */
+      if (g_file_equal (src, dir) || g_file_has_prefix (dir, src))
+        continue;
+      if (move && src_parent != NULL && g_file_equal (src_parent, dir))
+        continue;
+
+      g_autofree char *base = g_file_get_basename (src);
+      g_autofree char *unique = actions_unique_name_with_reserved (dir, base, reserved);
+      g_hash_table_add (reserved, g_strdup (unique));
+      g_autoptr (GFile) dest = g_file_get_child (dir, unique);
+      start_transfer (parent, src, dest, move);
     }
 }
 

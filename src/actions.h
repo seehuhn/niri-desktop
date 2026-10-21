@@ -23,6 +23,11 @@ void     actions_copy_to_clipboard (GtkWidget *widget, GList *files);
 void     actions_paste (GtkWindow *parent, GtkWidget *widget, DesktopModel *model);
 void     actions_import (GtkWindow *parent, DesktopModel *model, GList *files,
                          gboolean move, gboolean has_point, int x, int y);
+/* Whether a and b are local files on the same file system. */
+gboolean actions_same_filesystem (GFile *a, GFile *b);
+/* Copies or moves files into dir, renaming them where a name is taken.
+ * Skips dir itself, its ancestors, and (for a move) files already in dir. */
+void     actions_transfer (GtkWindow *parent, GList *files, GFile *dir, gboolean move);
 /* Synchronous helpers for the import thread.  copy_recursive creates
  * dest as a new directory and copies src's contents into it (symlinks
  * inside are copied as links); delete_recursive deletes children first.
