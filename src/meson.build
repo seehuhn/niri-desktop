@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Jochen Voss <voss@seehuhn.de>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-lib_sources = files('position-store.c', 'layout.c', 'settings.c', 'desktop-background.c', 'desktop-item.c', 'desktop-model.c', 'thumbnails.c', 'desktop-icon.c', 'desktop-layout.c', 'desktop-canvas.c', 'actions.c')
+lib_sources = files('position-store.c', 'layout.c', 'settings.c', 'desktop-background.c', 'luminance.c', 'desktop-item.c', 'desktop-model.c', 'thumbnails.c', 'desktop-icon.c', 'desktop-layout.c', 'desktop-canvas.c', 'actions.c')
 
 executable('niri-desktop',
   lib_sources + files('main.c') + [niri_desktop_resources],

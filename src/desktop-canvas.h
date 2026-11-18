@@ -6,6 +6,7 @@
 
 #include <gtk/gtk.h>
 
+#include "desktop-background.h"
 #include "desktop-icon.h"
 #include "desktop-model.h"
 
@@ -33,5 +34,10 @@ GList        *desktop_canvas_get_selected_items (DesktopCanvas *self);
 GList        *desktop_canvas_get_selected_files (DesktopCanvas *self);
 void          desktop_canvas_select_all         (DesktopCanvas *self);
 void          desktop_canvas_clear_selection    (DesktopCanvas *self);
+
+/* The image behind the canvas.  Labels of icons over light parts of it get
+ * the CSS class "light-background".  The canvas keeps a reference. */
+void          desktop_canvas_set_background     (DesktopCanvas *self,
+                                                 DesktopBackground *background);
 
 G_END_DECLS

@@ -12,6 +12,7 @@ niri_desktop_deps = [
   dependency('gtk4'),
   dependency('gio-unix-2.0'),
   dependency('gdk-pixbuf-2.0'),
+  meson.get_compiler('c').find_library('m', required: false),
 ]
 niri_desktop_inc = include_directories('src')
 

@@ -21,6 +21,8 @@ struct _DesktopCanvas
   guint         page_tick;  /* pending resize after a page-size change */
   guint         place_tick; /* pending save of new icons' positions */
   guint         selection_idle;  /* pending selection-changed emission */
+  DesktopBackground *background;  /* owned, or NULL */
+  guint         contrast_tick;  /* pending update of label contrast */
 
   double        press_x, press_y;  /* last press, canvas coordinates */
   DesktopItem  *focus_item;        /* most recently selected, unowned */
@@ -114,6 +116,53 @@ place_tick (GtkWidget     *widget,
         desktop_model_set_position (self->model, item, (int) b.origin.x, (int) b.origin.y);
     }
   return G_SOURCE_REMOVE;
+}
+
+/* Relative luminance above which dark text contrasts better with the
+ * background than white text: the point of equal WCAG contrast ratio. */
+#define LIGHT_BACKGROUND_LUMINANCE 0.179
+
+/* Marks each icon whose label lies over a light part of the background. */
+static gboolean
+contrast_tick (GtkWidget     *widget,
+               GdkFrameClock *clock G_GNUC_UNUSED,
+               gpointer       data G_GNUC_UNUSED)
+{
+  DesktopCanvas *self = DESKTOP_CANVAS (widget);
+  GtkWidget *child;
+
+  self->contrast_tick = 0;
+  for (child = gtk_widget_get_first_child (widget);
+       child != NULL;
+       child = gtk_widget_get_next_sibling (child))
+    {
+      graphene_rect_t b;
+      double luminance;
+      gboolean light;
+
+      if (!DESKTOP_IS_ICON (child)
+          || !desktop_icon_compute_label_bounds (DESKTOP_ICON (child),
+                                                 GTK_WIDGET (self->background), &b))
+        continue;
+      light = desktop_background_get_luminance (self->background, &b, &luminance)
+              && luminance > LIGHT_BACKGROUND_LUMINANCE;
+      if (light)
+        gtk_widget_add_css_class (child, "light-background");
+      else
+        gtk_widget_remove_css_class (child, "light-background");
+    }
+  return G_SOURCE_REMOVE;
+}
+
+/* Changing CSS classes during allocation or scrolling would restyle in the
+ * middle of a frame; update on the next one instead. */
+static void
+queue_contrast_update (DesktopCanvas *self)
+{
+  if (self->contrast_tick == 0 && self->background != NULL
+      && gtk_widget_get_mapped (GTK_WIDGET (self)))
+    self->contrast_tick = gtk_widget_add_tick_callback (GTK_WIDGET (self), contrast_tick,
+                                                        NULL, NULL);
 }
 
 /* A position change can change the content height, hence a full resize. */
@@ -1056,6 +1105,8 @@ desktop_canvas_root (GtkWidget *widget)
         {
           self->vadj = g_object_ref (vadj);
           g_signal_connect_swapped (vadj, "notify::page-size", G_CALLBACK (on_page_size), self);
+          g_signal_connect_swapped (vadj, "value-changed",
+                                    G_CALLBACK (queue_contrast_update), self);
         }
     }
 }
@@ -1066,6 +1117,7 @@ disconnect_vadj (DesktopCanvas *self)
   if (self->vadj == NULL)
     return;
   g_signal_handlers_disconnect_by_func (self->vadj, on_page_size, self);
+  g_signal_handlers_disconnect_by_func (self->vadj, queue_contrast_update, self);
   g_clear_object (&self->vadj);
   if (self->page_tick != 0)
     {
@@ -1085,6 +1137,11 @@ desktop_canvas_unroot (GtkWidget *widget)
       gtk_widget_remove_tick_callback (widget, self->place_tick);
       self->place_tick = 0;
     }
+  if (self->contrast_tick != 0)
+    {
+      gtk_widget_remove_tick_callback (widget, self->contrast_tick);
+      self->contrast_tick = 0;
+    }
   GTK_WIDGET_CLASS (desktop_canvas_parent_class)->unroot (widget);
 }
 
@@ -1098,6 +1155,9 @@ desktop_canvas_dispose (GObject *object)
     g_signal_handlers_disconnect_by_func (desktop_model_get_items (self->model),
                                           on_items_changed, self);
   disconnect_vadj (self);
+  if (self->background != NULL)
+    g_signal_handlers_disconnect_by_func (self->background, queue_contrast_update, self);
+  g_clear_object (&self->background);
   while ((child = gtk_widget_get_first_child (GTK_WIDGET (self))) != NULL)
     {
       if (DESKTOP_IS_ICON (child))
@@ -1140,6 +1200,8 @@ on_layout_allocated (DesktopCanvas *self)
        child = gtk_widget_get_next_sibling (child))
     if (GTK_IS_POPOVER (child))  /* context menus follow the canvas */
       gtk_popover_present (GTK_POPOVER (child));
+
+  queue_contrast_update (self);
 }
 
 static void
@@ -1300,4 +1362,21 @@ desktop_canvas_clear_selection (DesktopCanvas *self)
 {
   g_return_if_fail (DESKTOP_IS_CANVAS (self));
   set_all_selected (self, FALSE);
+}
+
+void
+desktop_canvas_set_background (DesktopCanvas     *self,
+                               DesktopBackground *background)
+{
+  g_return_if_fail (DESKTOP_IS_CANVAS (self));
+  g_return_if_fail (background == NULL || DESKTOP_IS_BACKGROUND (background));
+
+  if (self->background != NULL)
+    g_signal_handlers_disconnect_by_func (self->background, queue_contrast_update, self);
+  g_set_object (&self->background, background);
+  if (background != NULL)
+    {
+      g_signal_connect_swapped (background, "changed", G_CALLBACK (queue_contrast_update), self);
+      queue_contrast_update (self);
+    }
 }

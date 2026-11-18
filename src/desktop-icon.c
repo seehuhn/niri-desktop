@@ -640,6 +640,16 @@ desktop_icon_get_item (DesktopIcon *self)
   return self->item;
 }
 
+gboolean
+desktop_icon_compute_label_bounds (DesktopIcon     *self,
+                                   GtkWidget       *target,
+                                   graphene_rect_t *bounds)
+{
+  g_return_val_if_fail (DESKTOP_IS_ICON (self), FALSE);
+  return gtk_widget_get_visible (self->label)
+         && gtk_widget_compute_bounds (self->label, target, bounds);
+}
+
 void
 desktop_icon_set_drag_files_func (DesktopIcon *self,
                                   GList       *(*func) (DesktopIcon *, gpointer),

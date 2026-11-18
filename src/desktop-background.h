@@ -15,6 +15,12 @@ GtkWidget *desktop_background_new (void);
 /* NULL clears the image.  Takes its own reference. */
 void       desktop_background_set_texture (DesktopBackground *self, GdkTexture *texture_or_null);
 gboolean   desktop_background_has_texture (DesktopBackground *self);
+/* Mean relative luminance (0 = black, 1 = white) of the image under
+ * `rect`, in widget coordinates.  FALSE without an image.  The "changed"
+ * signal is emitted whenever the image changes. */
+gboolean   desktop_background_get_luminance (DesktopBackground *self,
+                                             const graphene_rect_t *rect,
+                                             double *luminance);
 
 /* Loads an image file in a worker thread, downscaled to at most 3840x3840
  * and rotated per its EXIF orientation. */

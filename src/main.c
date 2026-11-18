@@ -596,6 +596,7 @@ on_activate (GApplication *app)
   state->canvas = DESKTOP_CANVAS (canvas);
   state->model = g_object_ref (model);
   state->background = DESKTOP_BACKGROUND (background);
+  desktop_canvas_set_background (state->canvas, state->background);
   g_object_set_data_full (G_OBJECT (window), "niri-desktop-app", state, (GDestroyNotify) app_free);
   g_action_map_add_action_entries (G_ACTION_MAP (window), win_actions,
                                    G_N_ELEMENTS (win_actions), state);

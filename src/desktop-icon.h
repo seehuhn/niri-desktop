@@ -21,6 +21,10 @@ G_DECLARE_FINAL_TYPE (DesktopIcon, desktop_icon, DESKTOP, ICON, GtkWidget)
 GtkWidget   *desktop_icon_new (DesktopItem *item, int icon_size);
 DesktopItem *desktop_icon_get_item (DesktopIcon *self);
 void         desktop_icon_start_rename (DesktopIcon *self);
+/* Bounds of the name label in `target` coordinates; FALSE while the label
+ * is hidden (during a rename) or the bounds cannot be computed. */
+gboolean     desktop_icon_compute_label_bounds (DesktopIcon *self, GtkWidget *target,
+                                                graphene_rect_t *bounds);
 /* The canvas supplies the selected files.  The returned list holds
  * GFile pointers (transfer none); the icon frees the list itself. */
 void         desktop_icon_set_drag_files_func (DesktopIcon *self,

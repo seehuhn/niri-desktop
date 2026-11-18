@@ -7,6 +7,7 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 
 #include "layout.h"
+#include "luminance.h"
 
 #define LOAD_MAX_SIZE 3840
 
@@ -14,9 +15,17 @@ struct _DesktopBackground
 {
   GtkWidget   parent_instance;
   GdkTexture *texture;
+  LuminanceMap *luminance;  /* of texture, or NULL */
 };
 
 G_DEFINE_FINAL_TYPE (DesktopBackground, desktop_background, GTK_TYPE_WIDGET)
+
+enum {
+  SIGNAL_CHANGED,
+  N_SIGNALS
+};
+
+static guint signals[N_SIGNALS];
 
 static void
 desktop_background_snapshot (GtkWidget   *widget,
@@ -41,7 +50,10 @@ desktop_background_snapshot (GtkWidget   *widget,
 static void
 desktop_background_dispose (GObject *object)
 {
-  g_clear_object (&DESKTOP_BACKGROUND (object)->texture);
+  DesktopBackground *self = DESKTOP_BACKGROUND (object);
+
+  g_clear_object (&self->texture);
+  g_clear_pointer (&self->luminance, luminance_map_free);
   G_OBJECT_CLASS (desktop_background_parent_class)->dispose (object);
 }
 
@@ -53,6 +65,11 @@ desktop_background_class_init (DesktopBackgroundClass *klass)
 
   object_class->dispose = desktop_background_dispose;
   widget_class->snapshot = desktop_background_snapshot;
+
+  signals[SIGNAL_CHANGED] =
+    g_signal_new ("changed", G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST,
+                  0, NULL, NULL, NULL,
+                  G_TYPE_NONE, 0);
 }
 
 static void
@@ -68,6 +85,19 @@ desktop_background_new (void)
   return g_object_new (DESKTOP_TYPE_BACKGROUND, NULL);
 }
 
+static LuminanceMap *
+luminance_for_texture (GdkTexture *texture)
+{
+  g_autoptr (GdkTextureDownloader) downloader = gdk_texture_downloader_new (texture);
+  g_autoptr (GBytes) bytes = NULL;
+  gsize stride;
+
+  gdk_texture_downloader_set_format (downloader, GDK_MEMORY_R8G8B8A8);
+  bytes = gdk_texture_downloader_download_bytes (downloader, &stride);
+  return luminance_map_new (g_bytes_get_data (bytes, NULL), gdk_texture_get_width (texture),
+                            gdk_texture_get_height (texture), stride);
+}
+
 void
 desktop_background_set_texture (DesktopBackground *self,
                                 GdkTexture        *texture_or_null)
@@ -77,8 +107,12 @@ desktop_background_set_texture (DesktopBackground *self,
   if (texture_or_null != NULL)
     g_object_ref (texture_or_null);
   g_clear_object (&self->texture);
+  g_clear_pointer (&self->luminance, luminance_map_free);
   self->texture = texture_or_null;
+  if (texture_or_null != NULL)
+    self->luminance = luminance_for_texture (texture_or_null);
   gtk_widget_queue_draw (GTK_WIDGET (self));
+  g_signal_emit (self, signals[SIGNAL_CHANGED], 0);
 }
 
 gboolean
@@ -86,6 +120,32 @@ desktop_background_has_texture (DesktopBackground *self)
 {
   g_return_val_if_fail (DESKTOP_IS_BACKGROUND (self), FALSE);
   return self->texture != NULL;
+}
+
+gboolean
+desktop_background_get_luminance (DesktopBackground     *self,
+                                  const graphene_rect_t *rect,
+                                  double                *luminance)
+{
+  double w, h, iw, ih, x, y, dw, dh, sx, sy;
+
+  g_return_val_if_fail (DESKTOP_IS_BACKGROUND (self), FALSE);
+  g_return_val_if_fail (rect != NULL && luminance != NULL, FALSE);
+
+  w = gtk_widget_get_width (GTK_WIDGET (self));
+  h = gtk_widget_get_height (GTK_WIDGET (self));
+  if (self->luminance == NULL || w <= 0 || h <= 0)
+    return FALSE;
+
+  /* Map widget coordinates to image pixels as the snapshot draws them. */
+  iw = gdk_texture_get_width (self->texture);
+  ih = gdk_texture_get_height (self->texture);
+  layout_cover_rect (w, h, iw, ih, &x, &y, &dw, &dh);
+  sx = iw / dw;
+  sy = ih / dh;
+  return luminance_map_mean (self->luminance, (rect->origin.x - x) * sx,
+                             (rect->origin.y - y) * sy, rect->size.width * sx,
+                             rect->size.height * sy, luminance);
 }
 
 static void

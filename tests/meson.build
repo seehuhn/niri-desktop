@@ -17,3 +17,5 @@ test('settings', executable('test-settings', 'test-settings.c',
   lib_sources, dependencies: niri_desktop_deps, include_directories: niri_desktop_inc))
 test('actions', executable('test-actions', 'test-actions.c',
   lib_sources, dependencies: niri_desktop_deps, include_directories: niri_desktop_inc))
+test('luminance', executable('test-luminance', 'test-luminance.c',
+  lib_sources, dependencies: niri_desktop_deps, include_directories: niri_desktop_inc))
